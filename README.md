@@ -92,7 +92,7 @@ On a gamepad, **Select + Start** opens it too. F11 toggles fullscreen, F12 saves
 The menu has cheats, video and performance options, and volume. Your choices are saved
 and restored on the next launch.
 
-**Defaults:** all cheats and gameplay-changing mods are **off**. Only the background
+**Defaults:** all cheats, Quick skip and gameplay-changing mods are **off**. Only the background
 (bezel) and *Remove slowdown* (a performance option that keeps game and music
 speed unchanged) start enabled. *Reset to defaults* in the menu restores this.
 
@@ -117,6 +117,18 @@ why interpolation generates extra frames instead.
 | Infinite lives | Dying doesn't decrease the lives counter |
 | Infinite special gas | Thunder, Heavy and Arrow gas shots cost nothing (pick some up first) |
 | Stage select | Choose any of the 7 stages, including the final one. Then pick any location on the map |
+
+### Quick skip
+
+Turn on **Quick skip** in the menu (Convenience). Then press **Tab** (or **R1/RB** on a
+gamepad) during the intro, title screen, briefings or dialogue boxes, and the game races
+through them, auto-confirming text, and stops at the next screen where you play or choose:
+the **map** or the **stage**. Any game button stops it early, and it does nothing during
+gameplay.
+
+It knows where to stop through **markers**: code addresses declared in the config that
+record "this code ran this frame" (`[[markers]]`: dialogue wait loop `$A402`, map input
+loop `$A448`, in-stage main loop `$C9AC`).
 
 ### Save states
 

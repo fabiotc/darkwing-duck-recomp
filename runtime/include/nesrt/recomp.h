@@ -36,6 +36,17 @@ extern const int nes_cheat_count;
 extern const nes_cheat_def nes_cheat_defs[];
 extern const int nes_patch_count;
 extern const nes_patch_def nes_patch_defs[];
+/* Markers: code locations that tell the frontend what the game is doing. */
+typedef struct {
+    const char *id;
+    uint8_t bank;
+    uint16_t addr;
+} nes_marker_def;
+extern const int nes_marker_count;
+extern const nes_marker_def nes_marker_defs[];
+extern uint32_t nes_marks; /* bit i set when marker i ran; cleared by the frontend */
+int nes_marker_index(const char *id); /* -1 if unknown */
+
 extern uint8_t nes_cheats[]; /* 0 = off, else 1 or (choice index + 1); indexed like nes_cheat_defs */
 
 /* Runtime entry points used by generated code. */

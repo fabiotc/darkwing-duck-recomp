@@ -38,6 +38,14 @@ static struct {
     uint64_t next_frame_ns, frame_ns;
     bool hold_menu_buttons; /* ignore Select/Start until released after the menu combo */
     long save_at_frame;     /* --save-state-at (testing) */
+    long skip_at_frame;     /* --skip-at (testing) */
+    /* Quick skip */
+    bool skipping;
+    bool skip_requested;
+    long skip_started;
+    uint32_t last_marks;
+    uint8_t prev_player; /* to stop skipping only on a newly pressed button */
+    uint8_t script_pad;  /* buttons from --input, separate from what the game receives */
     const char *save_at_path;
     /* scripted input: sorted (frame, buttons) changes */
     long *script_frame;
@@ -235,6 +243,52 @@ static void request_state(int req) {
     nes_at_safe_point(req == UI_REQ_SAVE ? do_save_state : do_load_state, NULL);
 }
 
+/* ---- Quick skip -------------------------------------------------------- */
+
+#define SKIP_MAX_FRAMES 6000 /* safety limit (two minutes of game time) */
+
+static uint32_t mark_bit(const char *id) {
+    int i = nes_marker_index(id);
+    return i < 0 ? 0 : 1u << i;
+}
+
+/* Called once per frame. Returns the buttons to feed the game while skipping. */
+static uint8_t quick_skip_update(long frame, uint8_t player_buttons) {
+    const uint32_t stop_marks = mark_bit("map") | mark_bit("gameplay");
+    uint32_t marks = nes_marks;
+    nes_marks = 0;
+    G.last_marks = marks;
+    uint8_t pressed = player_buttons & (uint8_t)~G.prev_player;
+    G.prev_player = player_buttons;
+
+    if (G.skip_requested) {
+        G.skip_requested = false;
+        if (marks & stop_marks) {
+            if (!G.headless) ui_toast("Nothing to skip here");
+        } else {
+            G.skipping = true;
+            G.skip_started = frame;
+            if (!G.headless) ui_toast("Skipping... (press any button to stop)");
+        }
+    }
+    if (!G.skipping) return player_buttons;
+
+    bool done = (marks & stop_marks) || (pressed && frame > G.skip_started) ||
+                frame - G.skip_started > SKIP_MAX_FRAMES;
+    if (done) {
+        G.skipping = false;
+        if (G.headless) fprintf(stderr, "quick skip: %ld -> %ld\n", G.skip_started, frame);
+        else ui_toast("Skipped");
+        return player_buttons;
+    }
+    /* Tap A and Start alternately: dialogue boxes take A, the intro and title take Start. */
+    switch ((frame / 3) % 4) {
+    case 0: return BTN_A;
+    case 2: return BTN_START;
+    default: return 0;
+    }
+}
+
 static void handle_events(long frame) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -247,6 +301,9 @@ static void handle_events(long frame) {
             case SDL_SCANCODE_F1: ui_toggle(); break;
             case SDL_SCANCODE_F11:
                 SDL_SetWindowFullscreen(G.window, !(SDL_GetWindowFlags(G.window) & SDL_WINDOW_FULLSCREEN));
+                break;
+            case SDL_SCANCODE_TAB:
+                if (ui_config.quick_skip && !ui_is_open()) G.skip_requested = true;
                 break;
             case SDL_SCANCODE_F5: request_state(UI_REQ_SAVE); break;
             case SDL_SCANCODE_F9: request_state(UI_REQ_LOAD); break;
@@ -265,6 +322,8 @@ static void handle_events(long frame) {
             }
             default: break;
             }
+        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) {
+            if (ui_config.quick_skip && !ui_is_open()) G.skip_requested = true;
         } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
             ui_toggle();
         } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && G.gamepad &&
@@ -308,12 +367,15 @@ void nes_frame_callback(void) {
 
     if (G.script_len) {
         while (G.script_pos < G.script_len && G.script_frame[G.script_pos] <= frame)
-            nes_pad[0] = G.script_buttons[G.script_pos++];
+            G.script_pad = G.script_buttons[G.script_pos++];
+        nes_pad[0] = G.script_pad;
     }
 
     if (G.ram_log) fwrite(nes_bus_state.ram, 1, sizeof nes_bus_state.ram, G.ram_log);
 
     if (G.headless) {
+        if (G.skip_at_frame && frame == G.skip_at_frame) G.skip_requested = true;
+        nes_pad[0] = quick_skip_update(frame, G.script_pad);
         int16_t sink[4096];
         while (nes_apu_take_samples(sink, 4096)) {}
     } else {
@@ -324,7 +386,21 @@ void nes_frame_callback(void) {
                 if (!(read_keyboard() & (BTN_START | BTN_SELECT))) G.hold_menu_buttons = false;
                 b &= (uint8_t)~(BTN_START | BTN_SELECT);
             }
-            nes_pad[0] = b;
+            G.script_pad = b;
+        }
+        nes_pad[0] = quick_skip_update(frame, G.script_pad);
+
+        /* While skipping: no frame pacing, no sound, and only every 8th frame shown. */
+        if (G.skipping) {
+            int16_t sink[4096];
+            while (nes_apu_take_samples(sink, 4096)) {}
+            if (frame % 8 == 0) {
+                upload(nes_ppu_framebuffer(), NES_WIDTH, NES_HEIGHT);
+                present();
+            }
+            G.next_frame_ns = SDL_GetTicksNS() + G.frame_ns;
+            if (G.max_frames && frame >= G.max_frames) nes_cpu_state.quit = true;
+            return;
         }
 
         /* Frame interpolation: show a generated in-between frame first, then
@@ -422,6 +498,7 @@ static void usage(void) {
             "  --no-flicker        draw more than 8 sprites per line\n"
             "  --save-state-at N FILE   save a state at frame N\n"
             "  --load-state FILE   start from a save state\n"
+            "  --skip-at N         trigger Quick skip at frame N (testing)\n"
             "  --watch ADDR        with --interpret: log instructions that change RAM byte ADDR (hex)\n"
             "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
 }
@@ -458,6 +535,7 @@ int main(int argc, char **argv) {
         }
         else if (!strcmp(a, "--overclock")) ui_config.remove_slowdown = true;
         else if (!strcmp(a, "--no-flicker")) ui_config.no_flicker = true;
+        else if (!strcmp(a, "--skip-at") && more) G.skip_at_frame = atol(argv[++i]);
         else if (!strcmp(a, "--load-state") && more) load_state = argv[++i];
         else if (!strcmp(a, "--save-state-at") && i + 2 < argc) {
             G.save_at_frame = atol(argv[++i]);

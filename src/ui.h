@@ -21,6 +21,7 @@ typedef struct {
     int state_slot;       /* 1..UI_STATE_SLOTS */
     int bezel;            /* BEZEL_* (artwork around the picture) */
     int bezel_fit;        /* BEZEL_FIT_* for custom images */
+    bool quick_skip;      /* Tab / R1 fast-forwards through cutscenes and dialogue */
 } ui_settings;
 
 #define UI_STATE_SLOTS 4

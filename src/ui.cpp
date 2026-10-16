@@ -26,6 +26,7 @@ static const ui_settings UI_DEFAULTS = {
     1,             /* state_slot */
     BEZEL_NIGHT_CITY, /* bezel */
     BEZEL_FIT_AUTO, /* bezel_fit */
+    false,          /* quick_skip */
 };
 ui_settings ui_config = UI_DEFAULTS;
 bool ui_cheats_available = true;
@@ -71,6 +72,7 @@ static void load_settings() {
         else if (!strcmp(key, "frame_interp")) ui_config.frame_interp = value != 0;
         else if (!strcmp(key, "no_flicker")) ui_config.no_flicker = value != 0;
         else if (!strcmp(key, "bezel")) ui_config.bezel = value >= 0 && value < BEZEL_COUNT ? value : BEZEL_PATTERN;
+        else if (!strcmp(key, "quick_skip")) ui_config.quick_skip = value != 0;
         else if (!strcmp(key, "bezel_fit")) ui_config.bezel_fit = value >= 0 && value < BEZEL_FIT_COUNT ? value : 0;
         else if (!strcmp(key, "state_slot")) ui_config.state_slot = value >= 1 && value <= UI_STATE_SLOTS ? value : 1;
         else if (!strncmp(key, "cheat.", 6))
@@ -87,9 +89,9 @@ static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\nno_flicker=%d\n"
-               "state_slot=%d\nbezel=%d\nbezel_fit=%d\n",
+               "state_slot=%d\nbezel=%d\nbezel_fit=%d\nquick_skip=%d\n",
             ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
-            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel, ui_config.bezel_fit);
+            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel, ui_config.bezel_fit, ui_config.quick_skip);
     for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i]);
     fclose(f);
 }
@@ -272,6 +274,12 @@ void ui_draw(void) {
         }
         help_marker(def->description);
     }
+
+    ImGui::SeparatorText("Convenience");
+    ImGui::Checkbox("Quick skip (Tab / R1)", &ui_config.quick_skip);
+    help_marker("Press Tab (or R1/RB on a gamepad) during the intro, briefings or dialogue boxes to race "
+                "through them to the next screen where you play or choose: the map or the stage. Any "
+                "game button stops it.");
 
     ImGui::SeparatorText("Video");
     bool fullscreen = SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN;

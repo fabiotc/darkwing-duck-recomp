@@ -91,10 +91,17 @@ class Cheat:
 
 
 class Recompiler:
-    def __init__(self, rom: Rom, noreturn: set[int] = frozenset(), cheats: list[Cheat] = ()):
+    def __init__(self, rom: Rom, noreturn: set[int] = frozenset(), cheats: list[Cheat] = (),
+                 markers: list[tuple[str, int, int]] = ()):
         self.rom = rom
         self.noreturn = set(noreturn)
         self.cheats = list(cheats)
+        # Markers: (id, bank, addr). Executing the instruction sets bit i of
+        # nes_marks, so the frontend can tell which part of the game is running.
+        self.markers = list(markers)
+        if len(self.markers) > 32:
+            raise ValueError("at most 32 markers")
+        self.marks = {(bank, addr): i for i, (_, bank, addr) in enumerate(self.markers)}
         # (bank, addr) -> (cheat index, "return" | "skip" | "poke", RAM addresses, unless)
         self.patches: dict[tuple[int, int], tuple[int, str, list[int], int | None]] = {}
         for i, ch in enumerate(self.cheats):
@@ -126,7 +133,7 @@ class Recompiler:
 
     def patch_seeds(self) -> dict[tuple[int, int], set[int]]:
         seeds: dict[tuple[int, int], set[int]] = {}
-        for bank, addr in self.patches:
+        for bank, addr in list(self.patches) + list(self.marks):
             seeds.setdefault((bank, (addr >> 14) & 1), set()).add(addr)
         return seeds
 
@@ -220,6 +227,9 @@ class Recompiler:
             ctx = StaticCtx(a, insn.operand, insn.op, win, wc.labels)
             body = emit_instruction(insn.op, ctx)
             patch = self.patches.get((win.bank, a))
+            mark = self.marks.get((win.bank, a))
+            if mark is not None:
+                out.append(f"    nes_marks |= 1u << {mark}; /* marker: {self.markers[mark][0]} */")
             if patch and patch[1] == "poke":
                 idx, _, ram, unless = patch
                 cond = f"nes_cheats[{idx}]"
@@ -271,6 +281,10 @@ class Recompiler:
         for i, c in enumerate(self.cheats):
             extra = (f", {len(c.choices)}, cheat{i}_choices, cheat{i}_values" if c.choices else ", 0, 0, 0")
             out.append(f"    {{{cstr(c.id)}, {cstr(c.name)}, {cstr(c.description)}{extra}}},")
+        out += ["    {0}", "};"]
+        out.append(f"const int nes_marker_count = {len(self.markers)};")
+        out.append("const nes_marker_def nes_marker_defs[] = {")
+        out += [f"    {{{cstr(m)}, {b}, 0x{a:04X}}}," for m, b, a in self.markers]
         out += ["    {0}", "};"]
         out.append(f"const int nes_patch_count = {len(self.patches)};")
         out.append("const nes_patch_def nes_patch_defs[] = {")

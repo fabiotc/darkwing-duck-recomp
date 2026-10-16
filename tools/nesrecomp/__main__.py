@@ -63,7 +63,8 @@ def cmd_recompile(args) -> int:
                     [(*parse_entry(p["at"]), [int(r, 16) for r in p["ram"]], p.get("unless")) for p in c.get("poke", [])],
                     c.get("choices", []), c.get("values", []))
               for c in cfg.get("cheats", [])]
-    rec = Recompiler(rom, {int(a, 16) for a in rc.get("noreturn", [])}, cheats)
+    markers = [(m["id"], *parse_entry(m["at"])) for m in cfg.get("markers", [])]
+    rec = Recompiler(rom, {int(a, 16) for a in rc.get("noreturn", [])}, cheats, markers)
     seeds = rec.default_seeds()
     for key, addrs in rec.patch_seeds().items():
         seeds.setdefault(key, set()).update(addrs)

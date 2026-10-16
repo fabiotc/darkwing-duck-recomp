@@ -52,3 +52,19 @@ choices = ["Bridge at night", "City streets", "Sewers", "Construction site", "Fo
            "Waterfront", "The ship (final stage)"]
 values = [0,1,2,3,4,5,6]
 poke = [{ at = "04:8000", ram = ["0031"] }]
+
+# ---- Markers ------------------------------------------------------------------
+# Code locations that tell the frontend what the game is doing (used by Quick
+# skip). Each sets a bit in nes_marks when it runs.
+
+[[markers]]
+id = "dialog_wait"   # waits for a button under a dialogue box (blinking arrow)
+at = "02:A402"
+
+[[markers]]
+id = "map"           # map screen input loop
+at = "02:A448"
+
+[[markers]]
+id = "gameplay"      # in-stage main loop
+at = "07:C9AC"

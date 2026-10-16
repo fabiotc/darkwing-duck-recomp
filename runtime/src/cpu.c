@@ -10,6 +10,13 @@ nes_cpu nes_cpu_state;
 nes_stats nes_stats_state;
 uint8_t nes_pad[2];
 uint8_t nes_cheats[64];
+uint32_t nes_marks;
+
+int nes_marker_index(const char *id) {
+    for (int i = 0; i < nes_marker_count; i++)
+        if (!strcmp(nes_marker_defs[i].id, id)) return i;
+    return -1;
+}
 
 static nes_options opts;
 static struct {
@@ -210,6 +217,9 @@ static int interp_patch(nes_cpu *c) {
 }
 
 static int interp_step(nes_cpu *c) {
+    for (int i = 0; i < nes_marker_count; i++)
+        if (nes_marker_defs[i].addr == c->pc && nes_marker_defs[i].bank == nes_bus_state.prg_bank16[(c->pc >> 14) & 1])
+            nes_marks |= 1u << i;
     if (nes_patch_count) {
         int r = interp_patch(c);
         if (r >= 0) return r;

@@ -23,10 +23,14 @@ CONTROLS
   Select   Right Shift / Backspace    Gamepad: Back / Select
   Menu     Esc or F1                  Gamepad: Select + Start together
   Save state F5, load state F9, next slot F6 (also in the menu)
+  Quick skip Tab / gamepad R1 (turn it on in the menu: Convenience)
   F11 fullscreen, F12 screenshot
 
   Custom background: put an image named bezel.png or bezel.jpg in the data
   folder (see below) and choose Background > Custom image in the menu.
+
+  Quick skip races through the intro, briefings and dialogue boxes
+  and stops at the map or when the stage starts.
 
   The menu has save states (4 slots), cheats (invincible, infinite lives,
   infinite special gas, stage select), video filters, sprite flicker
