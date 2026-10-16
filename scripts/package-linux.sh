@@ -6,3 +6,4 @@ docker run --rm --platform linux/amd64 \
   -v "$ROOT":/src -v "$ROM":/rom.nes:ro -e NAME="$NAME" \
   ubuntu:22.04 bash /src/scripts/linux/build-appimage.sh
 echo "-> $DIST/$NAME-linux-x86_64.AppImage"
+echo "-> $DIST/$NAME-linux-x86_64.tar.gz"

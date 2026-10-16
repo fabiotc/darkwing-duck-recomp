@@ -537,9 +537,14 @@ static void log_environment(void) {
     int v = SDL_GetVersion();
     fprintf(stderr, "Darkwing Duck Recomp %s on %s, SDL %d.%d.%d\n", DWD_VERSION, SDL_GetPlatform(),
             SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v));
-    fprintf(stderr, "  started by Steam: %s\n", getenv("SteamGameId") || getenv("SteamAppId") ? "yes" : "no");
+    const char *steam_vars[] = {"SteamGameId", "SteamAppId", "SteamClientLaunch", "SteamEnv",
+                                "STEAM_COMPAT_CLIENT_INSTALL_PATH", "STEAM_RUNTIME"};
+    bool by_steam = false;
+    for (size_t i = 0; i < sizeof steam_vars / sizeof *steam_vars; i++) by_steam |= getenv(steam_vars[i]) != NULL;
+    fprintf(stderr, "  started by Steam: %s\n", by_steam ? "yes" : "no");
     const char *vars[] = {"XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "SteamDeck", "SteamGameId",
-                          "SteamAppId", "GAMESCOPE_WAYLAND_DISPLAY", "SDL_VIDEO_DRIVER", "APPIMAGE", "PWD"};
+                          "SteamAppId", "SteamClientLaunch", "STEAM_RUNTIME", "GAMESCOPE_WAYLAND_DISPLAY",
+                          "SDL_VIDEO_DRIVER", "APPIMAGE", "PWD"};
     for (size_t i = 0; i < sizeof vars / sizeof *vars; i++) {
         const char *val = getenv(vars[i]);
         if (val) fprintf(stderr, "  %s=%s\n", vars[i], val);

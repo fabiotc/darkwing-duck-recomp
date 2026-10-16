@@ -54,7 +54,7 @@ Download the package for your system from the
 |---|---|
 | Windows 10/11 (64-bit) | `DarkwingDuckRecomp-*-windows-x64.zip` |
 | macOS 11+ (Apple Silicon & Intel) | `DarkwingDuckRecomp-*-macos-universal.zip` |
-| Linux, Steam Deck, SteamOS | `DarkwingDuckRecomp-*-linux-x86_64.AppImage` |
+| Linux, Steam Deck, SteamOS | `DarkwingDuckRecomp-*-linux-x86_64.tar.gz` (best for Steam / Game Mode) or `…-linux-x86_64.AppImage` |
 
 On first launch the game asks for your ROM (file dialog or drag and drop). It checks
 the ROM and keeps a copy in its data folder, so you only choose it once. A ROM named

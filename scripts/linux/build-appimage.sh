@@ -38,3 +38,12 @@ printf '\0\0\0' | dd of=/tmp/appimagetool bs=1 seek=8 count=3 conv=notrunc 2>/de
 (cd /tmp && ./appimagetool --appimage-extract >/dev/null)
 mkdir -p /src/dist
 ARCH=x86_64 /tmp/squashfs-root/AppRun --no-appstream "$APPDIR" "/src/dist/$NAME-linux-x86_64.AppImage"
+
+# Plain archive too: the bare executable needs no FUSE/AppImage mounting,
+# which can fail when Steam launches games in a restricted environment.
+TAR="$B/tar/$NAME-linux"
+rm -rf "$B/tar" && mkdir -p "$TAR"
+cp "$APPDIR/usr/bin/darkwing-duck" "$TAR/"
+cp /src/packaging/icon.png "$TAR/darkwing-duck.png"
+cp /src/packaging/README-player.txt "$TAR/README.txt"
+tar -C "$B/tar" -czf "/src/dist/$NAME-linux-x86_64.tar.gz" "$NAME-linux"

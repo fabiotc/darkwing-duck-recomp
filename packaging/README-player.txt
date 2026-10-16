@@ -48,6 +48,11 @@ WINDOWS
   click "More info" > "Run anyway".
 
 LINUX / STEAM DECK / STEAMOS
+  For Steam (Game Mode), the .tar.gz download is the most reliable:
+  extract it and add the "darkwing-duck" file inside as a Non-Steam Game.
+  If you use the AppImage with Steam and it closes immediately, set the
+  game's Launch Options to:  APPIMAGE_EXTRACT_AND_RUN=1 %command%
+
   1. In Desktop Mode, make the AppImage executable
      (right-click > Properties > Permissions > "Is executable",
      or: chmod +x DarkwingDuckRecomp-*.AppImage).
