@@ -1,0 +1,13 @@
+# Recompilation config for Darkwing Duck (Europe), MMC1.
+
+[rom]
+sha1 = "8c73e5f724ae8957570b0ea1b411e1ac5061bb24"
+
+[recomp]
+# Extra entry points, "BANK:ADDR" in hex.
+entries = []
+# Files with entry points recorded by running the game with --trace.
+entries_files = ["darkwing_duck.entries"]
+# Subroutines that never return to the instruction after the JSR
+# (e.g. jump-table dispatchers that pop their return address).
+noreturn = []

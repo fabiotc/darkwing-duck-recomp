@@ -1,0 +1,9 @@
+# Never commit game data.
+rom/*
+!rom/README.md
+*.nes
+
+build/
+*.bmp
+__pycache__/
+.DS_Store
