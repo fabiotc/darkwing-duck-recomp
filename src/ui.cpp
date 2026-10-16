@@ -24,7 +24,7 @@ static const ui_settings UI_DEFAULTS = {
     false,         /* frame_interp (experimental) */
     false,         /* no_flicker */
     1,             /* state_slot */
-    BEZEL_PATTERN, /* bezel */
+    BEZEL_NIGHT_CITY, /* bezel */
     BEZEL_FIT_AUTO, /* bezel_fit */
 };
 ui_settings ui_config = UI_DEFAULTS;
@@ -295,13 +295,24 @@ void ui_draw(void) {
     help_marker("Scale2x/Scale3x redraw pixel-art edges at higher resolution. CRT imitates the "
                 "scanlines of an old TV, which the art was designed for.");
 
-    static const char *bezels[BEZEL_COUNT] = {"Pattern (built-in)", "Custom image", "Black bars"};
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
+    /* Menu order differs from the stored values (new modes are appended). */
+    static const struct { int mode; const char *name; } bezels[] = {
+        {BEZEL_NIGHT_CITY, "Night city (built-in)"}, {BEZEL_PATTERN, "Pattern (built-in)"},
+        {BEZEL_CUSTOM, "Custom image"},             {BEZEL_BLACK, "Black bars"}};
     int prev_bezel = ui_config.bezel;
-    ImGui::Combo("Background", &ui_config.bezel, bezels, BEZEL_COUNT);
+    const char *current = bezels[0].name;
+    for (const auto &b : bezels)
+        if (b.mode == ui_config.bezel) current = b.name;
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
+    if (ImGui::BeginCombo("Background", current)) {
+        for (const auto &b : bezels)
+            if (ImGui::Selectable(b.name, b.mode == ui_config.bezel)) ui_config.bezel = b.mode;
+        ImGui::EndCombo();
+    }
     if (ui_config.bezel == BEZEL_CUSTOM && prev_bezel != BEZEL_CUSTOM) bezel_reload_custom();
-    help_marker("What fills the space around the picture. For a custom image, put bezel.png or "
-                "bezel.jpg in the game's data folder.");
+    help_marker("What fills the space around the picture. \"Night city\" is \"Pixel night city\" by "
+                "fridaruiz (CC0, opengameart.org). For a custom image, put bezel.png or bezel.jpg in the "
+                "game's data folder.");
     if (ui_config.bezel == BEZEL_CUSTOM && bezel_custom_available()) {
         static const char *fits[BEZEL_FIT_COUNT] = {"Auto", "Fill (artwork)", "Repeat (patterns)"};
         ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
@@ -356,7 +367,7 @@ void ui_draw(void) {
         ui_toast("Settings reset to defaults (all cheats off)");
     }
     ImGui::SameLine();
-    help_marker("Turns all cheats and enhancements off, except the background pattern and slowdown removal.");
+    help_marker("Turns all cheats and enhancements off, except the background and slowdown removal.");
     if (ImGui::Button("Resume")) ui_toggle();
     ImGui::SameLine();
     if (ImGui::Button("Quit game")) nes_cpu_state.quit = true;

@@ -58,5 +58,8 @@ Data folder (ROM copy and settings):
   macOS:   ~/Library/Application Support/darkwing-duck-recomp/darkwing-duck/
   Linux:   ~/.local/share/darkwing-duck-recomp/darkwing-duck/
 
+Default background: "Pixel night city" by fridaruiz (CC0),
+https://opengameart.org/content/pixel-night-city
+
 Darkwing Duck is (c) Disney. The NES game is (c) Capcom. This project is not
 affiliated with or endorsed by either.

@@ -11,7 +11,11 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-static SDL_Texture *pattern_tex, *custom_tex;
+static SDL_Texture *pattern_tex, *custom_tex, *night_city_tex;
+
+/* "Pixel night city" by fridaruiz, CC0 (assets/bezels/), embedded at build time. */
+extern const unsigned char night_city_png[];
+extern const unsigned int night_city_png_len;
 static bool custom_tried;
 
 /* ---- Built-in pattern: original 90s-style artwork drawn in code -------- */
@@ -115,20 +119,25 @@ bool bezel_custom_available(void) {
     return custom_path(path, sizeof path);
 }
 
+static SDL_Texture *texture_from_memory(SDL_Renderer *renderer, const void *data, size_t size) {
+    int w, h, n;
+    unsigned char *rgba = stbi_load_from_memory(data, (int)size, &w, &h, &n, 4);
+    if (!rgba) return NULL;
+    SDL_Surface *s = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, rgba, w * 4);
+    SDL_Texture *t = s ? SDL_CreateTextureFromSurface(renderer, s) : NULL;
+    SDL_DestroySurface(s);
+    stbi_image_free(rgba);
+    return t;
+}
+
 static SDL_Texture *load_custom(SDL_Renderer *renderer) {
     char path[1200];
     if (!custom_path(path, sizeof path)) return NULL;
     size_t size;
     void *file = SDL_LoadFile(path, &size);
     if (!file) return NULL;
-    int w, h, n;
-    unsigned char *rgba = stbi_load_from_memory(file, (int)size, &w, &h, &n, 4);
+    SDL_Texture *t = texture_from_memory(renderer, file, size);
     SDL_free(file);
-    if (!rgba) return NULL;
-    SDL_Surface *s = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, rgba, w * 4);
-    SDL_Texture *t = s ? SDL_CreateTextureFromSurface(renderer, s) : NULL;
-    SDL_DestroySurface(s);
-    stbi_image_free(rgba);
     if (t) {
         SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR);
         SDL_SetTextureColorMod(t, 170, 170, 170);
@@ -142,6 +151,31 @@ void bezel_draw(SDL_Renderer *renderer, int mode, int fit, const SDL_FRect *game
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     if (mode == BEZEL_BLACK) return;
+
+    if (mode == BEZEL_NIGHT_CITY) {
+        if (!night_city_tex) {
+            night_city_tex = texture_from_memory(renderer, night_city_png, night_city_png_len);
+            if (night_city_tex) {
+                SDL_SetTextureScaleMode(night_city_tex, SDL_SCALEMODE_NEAREST); /* crisp pixel art */
+                SDL_SetTextureColorMod(night_city_tex, 200, 200, 200);
+            }
+        }
+        if (night_city_tex) {
+            /* Cover the window, anchored to the top, and slide it sideways so
+             * the moon sits in the middle of the left strip whatever the
+             * screen shape. Zoom slightly so there's room to slide. */
+            const float moon_x = 69.0f; /* moon centre in the image, pixels */
+            float tw, th;
+            SDL_GetTextureSize(night_city_tex, &tw, &th);
+            float s = SDL_max(w / tw, h / th) * 1.15f;
+            float x = game->x / 2 - moon_x * s;
+            x = SDL_clamp(x, w - tw * s, 0.0f);
+            SDL_FRect dst = {x, 0, tw * s, th * s};
+            SDL_RenderTexture(renderer, night_city_tex, NULL, &dst);
+            goto shadow;
+        }
+        mode = BEZEL_PATTERN; /* fall back if decoding failed */
+    }
 
     SDL_Texture *tex = NULL;
     if (mode == BEZEL_CUSTOM) {
@@ -179,6 +213,7 @@ void bezel_draw(SDL_Renderer *renderer, int mode, int fit, const SDL_FRect *game
         SDL_RenderTextureTiled(renderer, pattern_tex, NULL, scale, &all);
     }
 
+shadow:
     /* A soft shadow so the picture sits "on top" of the artwork. */
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     for (int i = 1; i <= 12; i++) {

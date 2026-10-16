@@ -9,7 +9,8 @@
 extern "C" {
 #endif
 
-enum { BEZEL_PATTERN, BEZEL_CUSTOM, BEZEL_BLACK, BEZEL_COUNT };
+/* Values are stored in settings.ini, so new modes are appended. */
+enum { BEZEL_PATTERN, BEZEL_CUSTOM, BEZEL_BLACK, BEZEL_NIGHT_CITY, BEZEL_COUNT };
 /* How a custom image is laid out: Auto repeats images narrower than the
  * window and fills with wider ones. */
 enum { BEZEL_FIT_AUTO, BEZEL_FIT_FILL, BEZEL_FIT_REPEAT, BEZEL_FIT_COUNT };

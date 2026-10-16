@@ -84,7 +84,15 @@ target_link_libraries(game_recomp PUBLIC nesrt)
 # Window functions are huge single functions; -O1 keeps compile times sane.
 target_compile_options(game_recomp PRIVATE -O1 -Wno-unused-label)
 
-add_executable(darkwing-duck src/main.c src/bezel.c src/rom_select.c src/ui.cpp)
+# Built-in bezel artwork, compiled into the executable.
+set(NIGHT_CITY_PNG "${CMAKE_SOURCE_DIR}/assets/bezels/night_city.png")
+add_custom_command(
+  OUTPUT "${GEN_DIR}/bezel_night_city.c"
+  COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/cmake/embed.py" "${NIGHT_CITY_PNG}" night_city_png
+          "${GEN_DIR}/bezel_night_city.c"
+  DEPENDS "${NIGHT_CITY_PNG}" "${CMAKE_SOURCE_DIR}/cmake/embed.py")
+
+add_executable(darkwing-duck src/main.c src/bezel.c src/rom_select.c src/ui.cpp "${GEN_DIR}/bezel_night_city.c")
 target_include_directories(darkwing-duck PRIVATE third_party)
 target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt imgui SDL3::SDL3)
 
