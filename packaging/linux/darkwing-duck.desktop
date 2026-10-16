@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Darkwing Duck Recomp
+Comment=Native recompilation of the NES game (requires your own ROM)
+Exec=darkwing-duck
+Icon=darkwing-duck
+Categories=Game;
+Terminal=false

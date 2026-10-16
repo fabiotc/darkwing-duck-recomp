@@ -20,6 +20,9 @@ typedef struct {
 } ui_settings;
 
 extern ui_settings ui_config;
+extern bool ui_cheats_available; /* false when running a ROM version the cheats weren't made for */
+
+enum { UI_PICK_NONE, UI_PICK_BROWSE, UI_PICK_USE_ANYWAY, UI_PICK_OPEN_FOLDER, UI_PICK_QUIT };
 
 bool ui_init(SDL_Window *window, SDL_Renderer *renderer);
 void ui_shutdown(void); /* also saves settings */
@@ -27,6 +30,11 @@ void ui_process_event(const SDL_Event *e);
 bool ui_is_open(void);
 void ui_toggle(void);
 void ui_draw(void); /* call after drawing the game, before SDL_RenderPresent */
+
+/* Draws the first-launch "choose your ROM" screen and returns the clicked
+ * action (UI_PICK_*). message is shown under the buttons (warning style if
+ * warn); can_use_anyway offers running a different ROM version. */
+int ui_rom_picker(const char *message, bool can_use_anyway, bool warn, const char *data_folder);
 
 #ifdef __cplusplus
 }

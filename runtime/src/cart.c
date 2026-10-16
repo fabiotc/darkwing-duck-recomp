@@ -8,7 +8,7 @@
 nes_cart nes_cart_state;
 nes_bus nes_bus_state;
 
-static uint32_t crc32(const uint8_t *p, size_t n) {
+uint32_t nes_crc32(const uint8_t *p, size_t n) {
     uint32_t c = 0xFFFFFFFFu;
     for (size_t i = 0; i < n; i++) {
         c ^= p[i];
@@ -19,6 +19,9 @@ static uint32_t crc32(const uint8_t *p, size_t n) {
 
 bool nes_cart_load(const char *path, char *err, size_t errlen) {
     nes_cart *cart = &nes_cart_state;
+    free(cart->prg);
+    free(cart->chr);
+    cart->prg = cart->chr = NULL;
     FILE *f = fopen(path, "rb");
     if (!f) {
         snprintf(err, errlen, "cannot open %s", path);
@@ -56,7 +59,7 @@ bool nes_cart_load(const char *path, char *err, size_t errlen) {
         snprintf(err, errlen, "%s is truncated", path);
         return false;
     }
-    cart->prg_crc32 = crc32(cart->prg, prg);
+    cart->prg_crc32 = nes_crc32(cart->prg, prg);
     return true;
 }
 

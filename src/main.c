@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "nesrt/recomp.h"
+#include "rom_select.h"
 #include "ui.h"
 
 static const uint32_t PALETTE[64] = {
@@ -34,6 +35,7 @@ static struct {
     SDL_AudioStream *audio;
     SDL_Gamepad *gamepad;
     uint64_t next_frame_ns, frame_ns;
+    bool hold_menu_buttons; /* ignore Select/Start until released after the menu combo */
     /* scripted input: sorted (frame, buttons) changes */
     long *script_frame;
     uint8_t *script_buttons;
@@ -219,6 +221,14 @@ static void handle_events(long frame) {
             }
         } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
             ui_toggle();
+        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && G.gamepad &&
+                   ((e.gbutton.button == SDL_GAMEPAD_BUTTON_START &&
+                     SDL_GetGamepadButton(G.gamepad, SDL_GAMEPAD_BUTTON_BACK)) ||
+                    (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK &&
+                     SDL_GetGamepadButton(G.gamepad, SDL_GAMEPAD_BUTTON_START)))) {
+            /* Select+Start: the Steam Deck reserves the Guide button. */
+            ui_toggle();
+            G.hold_menu_buttons = true;
         } else if (e.type == SDL_EVENT_GAMEPAD_ADDED && !G.gamepad) {
             G.gamepad = SDL_OpenGamepad(e.gdevice.which);
         } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED && G.gamepad && SDL_GetGamepadID(G.gamepad) == e.gdevice.which) {
@@ -258,7 +268,14 @@ void nes_frame_callback(void) {
         while (nes_apu_take_samples(sink, 4096)) {}
     } else {
         handle_events(frame);
-        if (!G.script_len) nes_pad[0] = ui_is_open() ? 0 : read_keyboard();
+        if (!G.script_len) {
+            uint8_t b = ui_is_open() ? 0 : read_keyboard();
+            if (G.hold_menu_buttons) {
+                if (!(read_keyboard() & (BTN_START | BTN_SELECT))) G.hold_menu_buttons = false;
+                b &= (uint8_t)~(BTN_START | BTN_SELECT);
+            }
+            nes_pad[0] = b;
+        }
 
         /* Frame interpolation: show a generated in-between frame first, then
          * the real one half a frame later (twice the frame rate). */
@@ -338,6 +355,7 @@ static bool load_script(const char *path) {
 static void usage(void) {
     fprintf(stderr,
             "usage: darkwing-duck [options] [rom.nes]\n"
+            "  (without a ROM argument the remembered ROM is used, or you are asked once)\n"
             "  --interpret         run everything in the interpreter (reference mode)\n"
             "  --trace FILE        record code the interpreter had to run (feeds the recompiler)\n"
             "  --region ntsc|pal   override the ROM header's region\n"
@@ -351,18 +369,6 @@ static void usage(void) {
             "  --overclock         remove slowdown (extra CPU time per frame)\n"
             "  --watch ADDR        with --interpret: log instructions that change RAM byte ADDR (hex)\n"
             "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
-}
-
-static const char *find_rom(void) {
-    static const char *candidates[] = {"rom/darkwing-duck.nes", "darkwing-duck.nes", "../rom/darkwing-duck.nes"};
-    for (size_t i = 0; i < sizeof candidates / sizeof *candidates; i++) {
-        FILE *f = fopen(candidates[i], "rb");
-        if (f) {
-            fclose(f);
-            return candidates[i];
-        }
-    }
-    return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -394,26 +400,6 @@ int main(int argc, char **argv) {
         else if (a[0] == '-') { usage(); return 2; }
         else rom = a;
     }
-    if (!rom) rom = find_rom();
-    if (!rom) {
-        fprintf(stderr, "error: ROM not found. Pass the path to your Darkwing Duck dump.\n");
-        usage();
-        return 1;
-    }
-
-    char err[256];
-    if (!nes_cart_load(rom, err, sizeof err) || !nes_mapper_init(err, sizeof err)) {
-        fprintf(stderr, "error: %s\n", err);
-        return 1;
-    }
-    if (nes_cart_state.prg_crc32 != nes_recomp_prg_crc32 && !opt.interpret_only) {
-        fprintf(stderr, "warning: %s is not the ROM this build was recompiled from "
-                        "(PRG CRC32 %08X, expected %08X); falling back to the interpreter.\n",
-                rom, nes_cart_state.prg_crc32, nes_recomp_prg_crc32);
-        opt.interpret_only = true;
-    }
-    opt.region = nes_cart_state.region;
-    if (region) opt.region = !strcmp(region, "pal") ? REGION_PAL : REGION_NTSC;
     if (G.input_script && !load_script(G.input_script)) {
         fprintf(stderr, "error: cannot read %s\n", G.input_script);
         return 1;
@@ -431,12 +417,42 @@ int main(int argc, char **argv) {
         }
         SDL_SetRenderVSync(G.renderer, 0);
         if (!ui_init(G.window, G.renderer)) fprintf(stderr, "warning: menu unavailable\n");
-        if (!G.no_audio) {
-            SDL_AudioSpec spec = {SDL_AUDIO_S16, 1, 48000};
-            G.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-            if (G.audio) SDL_ResumeAudioStreamDevice(G.audio);
-            else fprintf(stderr, "warning: no audio: %s\n", SDL_GetError());
+    }
+
+    /* Command line, then the remembered copy / nearby files, then ask. */
+    char *found = NULL;
+    if (!rom) rom = found = rom_find();
+    if (!rom && !G.headless) rom = found = rom_picker_run(G.window, G.renderer);
+    if (!rom) {
+        if (G.headless) {
+            fprintf(stderr, "error: ROM not found. Pass the path to your Darkwing Duck dump.\n");
+            usage();
         }
+        return 1;
+    }
+
+    char err[256];
+    if (!nes_cart_load(rom, err, sizeof err) || !nes_mapper_init(err, sizeof err)) {
+        fprintf(stderr, "error: %s\n", err);
+        if (!G.headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Darkwing Duck", err, G.window);
+        return 1;
+    }
+    if (nes_cart_state.prg_crc32 != nes_recomp_prg_crc32) {
+        fprintf(stderr, "warning: %s is not the ROM this build was recompiled from "
+                        "(PRG CRC32 %08X, expected %08X); running in the interpreter, cheats disabled.\n",
+                rom, nes_cart_state.prg_crc32, nes_recomp_prg_crc32);
+        opt.interpret_only = true;
+        ui_cheats_available = false; /* cheats patch addresses of the supported version */
+        memset(nes_cheats, 0, (size_t)nes_cheat_count);
+    }
+    opt.region = nes_cart_state.region;
+    if (region) opt.region = !strcmp(region, "pal") ? REGION_PAL : REGION_NTSC;
+
+    if (!G.headless && !G.no_audio) {
+        SDL_AudioSpec spec = {SDL_AUDIO_S16, 1, 48000};
+        G.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+        if (G.audio) SDL_ResumeAudioStreamDevice(G.audio);
+        else fprintf(stderr, "warning: no audio: %s\n", SDL_GetError());
     }
 
     nes_power_on(&opt);

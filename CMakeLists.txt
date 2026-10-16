@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(darkwing_duck_recomp C CXX)
+project(darkwing_duck_recomp VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -9,8 +9,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Release builds link a static SDL3 built from source, so players don't need
+# to install anything.
+option(DWD_BUNDLED_SDL "Build SDL3 from source and link it statically" OFF)
+option(DWD_PACKAGE "Build a distributable app (macOS .app bundle)" OFF)
+
 find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
-find_package(SDL3 CONFIG QUIET)
+if(NOT DWD_BUNDLED_SDL)
+  find_package(SDL3 CONFIG QUIET)
+endif()
 if(NOT SDL3_FOUND)
   message(STATUS "SDL3 not found on the system, fetching it")
   include(FetchContent)
@@ -76,5 +83,29 @@ target_link_libraries(game_recomp PUBLIC nesrt)
 # Window functions are huge single functions; -O1 keeps compile times sane.
 target_compile_options(game_recomp PRIVATE -O1 -Wno-unused-label)
 
-add_executable(darkwing-duck src/main.c src/ui.cpp)
+add_executable(darkwing-duck src/main.c src/rom_select.c src/ui.cpp)
 target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt imgui SDL3::SDL3)
+
+# ---- Packaging ----------------------------------------------------------------
+if(APPLE AND DWD_PACKAGE)
+  set(ICNS "${CMAKE_SOURCE_DIR}/packaging/macos/icon.icns")
+  target_sources(darkwing-duck PRIVATE "${ICNS}")
+  set_source_files_properties("${ICNS}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  set_target_properties(darkwing-duck PROPERTIES
+    MACOSX_BUNDLE TRUE
+    OUTPUT_NAME "Darkwing Duck Recomp"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/packaging/macos/Info.plist.in"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+elseif(APPLE)
+  # plain executable for development builds
+elseif(WIN32)
+  target_sources(darkwing-duck PRIVATE "${CMAKE_SOURCE_DIR}/packaging/windows/icon.rc")
+  set_target_properties(darkwing-duck PROPERTIES WIN32_EXECUTABLE TRUE)
+  if(MINGW)
+    target_link_options(darkwing-duck PRIVATE -static -static-libgcc -static-libstdc++)
+  endif()
+else()
+  target_link_options(darkwing-duck PRIVATE -static-libgcc -static-libstdc++)
+endif()
+install(TARGETS darkwing-duck BUNDLE DESTINATION . RUNTIME DESTINATION bin)

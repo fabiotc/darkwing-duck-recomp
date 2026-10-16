@@ -13,6 +13,7 @@ extern "C" {
 }
 
 ui_settings ui_config = {80, false, FILTER_NONE, false, false};
+bool ui_cheats_available = true;
 
 static SDL_Window *g_window;
 static SDL_Renderer *g_renderer;
@@ -108,11 +109,59 @@ static void help_marker(const char *text) {
     }
 }
 
-void ui_draw(void) {
-    if (!g_open) return;
+static void begin_frame() {
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+}
+
+static void end_frame() {
+    ImGui::Render();
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), g_renderer);
+}
+
+int ui_rom_picker(const char *message, bool can_use_anyway, bool warn, const char *data_folder) {
+    int action = UI_PICK_NONE;
+    begin_frame();
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(vp->Size.x * 0.85f, 0));
+    ImGui::Begin("Welcome", nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::TextWrapped("Darkwing Duck - native recompilation");
+    ImGui::Separator();
+    ImGui::TextWrapped("This game needs your own copy of the Darkwing Duck NES cartridge, as a ROM "
+                       "file (.nes). Choose it once and it will be remembered.");
+    ImGui::Spacing();
+    if (ImGui::Button("Choose ROM file...")) action = UI_PICK_BROWSE;
+    ImGui::SameLine();
+    ImGui::TextDisabled("or drag the file onto this window");
+    if (message && *message) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, warn ? ImVec4(1.0f, 0.8f, 0.3f, 1) : ImVec4(1.0f, 0.45f, 0.45f, 1));
+        ImGui::TextWrapped("%s", message);
+        ImGui::PopStyleColor();
+        if (can_use_anyway && ImGui::Button("Use it anyway")) action = UI_PICK_USE_ANYWAY;
+    }
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("No file dialog (e.g. Steam Deck game mode)? Put the ROM next to the app, named "
+                       "darkwing-duck.nes, or copy it into the data folder:");
+    ImGui::PopStyleColor();
+    ImGui::TextWrapped("%s", data_folder);
+    if (ImGui::Button("Open data folder")) action = UI_PICK_OPEN_FOLDER;
+    ImGui::SameLine();
+    if (ImGui::Button("Quit")) action = UI_PICK_QUIT;
+    ImGui::End();
+    end_frame();
+    return action;
+}
+
+void ui_draw(void) {
+    if (!g_open) return;
+    begin_frame();
 
     /* Dim the paused game behind the menu. */
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, IM_COL32(0, 0, 0, 150));
@@ -122,8 +171,9 @@ void ui_draw(void) {
                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
     ImGui::SeparatorText("Cheats");
-    if (nes_cheat_count == 0) ImGui::TextDisabled("No cheats defined in the game config.");
-    for (int i = 0; i < nes_cheat_count; i++) {
+    if (!ui_cheats_available) ImGui::TextDisabled("Cheats need the supported ROM version (Europe).");
+    else if (nes_cheat_count == 0) ImGui::TextDisabled("No cheats defined in the game config.");
+    for (int i = 0; ui_cheats_available && i < nes_cheat_count; i++) {
         bool on = nes_cheats[i] != 0;
         if (ImGui::Checkbox(nes_cheat_defs[i].name, &on)) nes_cheats[i] = on;
         help_marker(nes_cheat_defs[i].description);
@@ -177,9 +227,8 @@ void ui_draw(void) {
     ImGui::SameLine();
     if (ImGui::Button("Quit game")) nes_cpu_state.quit = true;
     ImGui::SameLine();
-    ImGui::TextDisabled("Esc / F1 toggles this menu");
+    ImGui::TextDisabled("Esc / F1 / Select+Start");
 
     ImGui::End();
-    ImGui::Render();
-    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), g_renderer);
+    end_frame();
 }

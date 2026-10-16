@@ -38,6 +38,27 @@ player supplies their own copy, and the build produces the game locally from it.
 First playable version: the game boots, the intro, title, map and stages run
 entirely from recompiled code, with sound and keyboard/gamepad input.
 
+## Playing (release downloads)
+
+Download the package for your system from the
+[Releases](https://github.com/fabiotc/darkwing-duck-recomp/releases) page:
+
+| System | File |
+|---|---|
+| Windows 10/11 (64-bit) | `DarkwingDuckRecomp-*-windows-x64.zip` |
+| macOS 11+ (Apple Silicon & Intel) | `DarkwingDuckRecomp-*-macos-universal.zip` |
+| Linux, Steam Deck, SteamOS | `DarkwingDuckRecomp-*-linux-x86_64.AppImage` |
+
+On first launch the game asks for your ROM (file dialog or drag and drop). It checks
+the ROM and keeps a copy in its data folder, so you only choose it once. A ROM named
+`darkwing-duck.nes` placed next to the app or AppImage is also picked up automatically,
+which is the easiest route on a Steam Deck. Each package includes a `README.txt` with
+per-platform tips, such as adding the AppImage to Steam and the macOS "unidentified
+developer" prompt.
+
+Release downloads contain the recompiled program code but no game assets (graphics,
+music, levels), so they don't work without your ROM.
+
 ## Building
 
 Requirements: CMake ≥ 3.20, a C11 compiler, Python ≥ 3.11, SDL3
@@ -64,7 +85,7 @@ Expected ROM: `Darkwing Duck (Europe)`, NES 2.0 header, SHA-1
 | Select | Right Shift / Backspace | Back |
 
 **Esc** or **F1** (or the gamepad's Guide button) opens the options menu, which pauses the game.
-F11 toggles fullscreen, F12 saves a screenshot.
+On a gamepad, **Select + Start** opens it too. F11 toggles fullscreen, F12 saves a screenshot.
 
 ## Options menu & cheats
 
@@ -147,6 +168,22 @@ at `$05E4`/`$05E6` (`$70` = "0").
   points (`bank:address`, addresses only, no game data) the interpreter had to run.
   The recompiler uses them as extra seeds.
 
+### Making release packages
+
+```sh
+./scripts/package-all.sh     # or package-macos.sh / package-windows.sh / package-linux.sh
+```
+
+| Package | Built with |
+|---|---|
+| macOS universal `.app` | Xcode command line tools (ad-hoc signed) |
+| Windows x64 `.exe` | mingw-w64 cross-compiler (`brew install mingw-w64`) |
+| Linux x86_64 AppImage | Docker, inside an Ubuntu 22.04 container (glibc 2.35+, including SteamOS) |
+
+SDL3 is built from source and linked statically (`-DDWD_BUNDLED_SDL=ON`), so the packages
+have no dependencies. Output goes to `dist/`, together with `SHA256SUMS.txt`. The ROM is
+only read locally during the build and is never uploaded.
+
 ### Growing coverage
 
 On exit the game prints how many blocks the interpreter ran. To recompile more of
@@ -176,7 +213,9 @@ cmp a.bmp b.bmp
 | `tools/nesrecomp/` | the recompiler (opcode table, semantics, analysis, codegen) |
 | `runtime/` | `nesrt`: CPU glue/dispatcher, PPU, APU, cartridge + mappers |
 | `src/main.c` | SDL3 frontend |
-| `src/ui.cpp` | options menu (Dear ImGui) |
+| `src/ui.cpp` | options menu and first-launch ROM screen (Dear ImGui) |
+| `src/rom_select.c` | finding, checking and remembering the player's ROM |
+| `packaging/`, `scripts/` | icons, platform metadata and release packaging |
 | `config/` | per-game config and recorded entry points |
 
 ## Legal

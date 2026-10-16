@@ -59,6 +59,7 @@ typedef struct nes_cart {
 
 extern nes_cart nes_cart_state;
 
+uint32_t nes_crc32(const uint8_t *data, size_t len);
 /* Load an iNES / NES 2.0 image. Returns false and fills err on failure. */
 bool nes_cart_load(const char *path, char *err, size_t errlen);
 bool nes_mapper_init(char *err, size_t errlen);
