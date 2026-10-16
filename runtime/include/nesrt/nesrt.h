@@ -91,6 +91,12 @@ void nes_ppu_oam_dma(const uint8_t *page);
 uint64_t nes_ppu_next_event(void);       /* CPU cycle of the next PPU event */
 const uint8_t *nes_ppu_framebuffer(void); /* 256x240 NES palette indices */
 uint64_t nes_ppu_frame_count(void);
+/* Enhancements (off by default, not part of the original hardware). */
+void nes_ppu_set_overclock(bool on);   /* extra CPU time per frame: removes slowdown */
+uint64_t nes_ppu_paused_cycles(void);  /* CPU cycles spent in overclock lines */
+/* Render a frame between the previous and the latest one (t in 0..1) at
+ * twice the resolution: out must hold 512x480 palette indices. */
+bool nes_ppu_render_interpolated(uint8_t *out, float t);
 
 void nes_apu_reset(int sample_rate);
 void nes_apu_sync(void);

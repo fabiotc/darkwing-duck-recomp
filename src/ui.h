@@ -9,9 +9,14 @@
 extern "C" {
 #endif
 
+enum { FILTER_NONE, FILTER_SCALE2X, FILTER_SCALE3X, FILTER_CRT, FILTER_COUNT };
+
 typedef struct {
-    int volume;         /* 0-100 */
-    bool integer_scale; /* only scale the picture by whole numbers (sharpest pixels) */
+    int volume;           /* 0-100 */
+    bool integer_scale;   /* only scale the picture by whole numbers (sharpest pixels) */
+    int filter;           /* FILTER_* */
+    bool remove_slowdown; /* overclock the CPU so busy scenes don't lag */
+    bool frame_interp;    /* show generated in-between frames (2x frame rate) */
 } ui_settings;
 
 extern ui_settings ui_config;

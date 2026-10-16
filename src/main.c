@@ -28,6 +28,9 @@ static struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
+    int tex_w, tex_h;
+    uint8_t interp_fb[NES_WIDTH * 2 * NES_HEIGHT * 2]; /* in-between frame, 2x resolution */
+    uint8_t big_fb[NES_WIDTH * 2 * NES_HEIGHT * 2];    /* real frame, doubled */
     SDL_AudioStream *audio;
     SDL_Gamepad *gamepad;
     uint64_t next_frame_ns, frame_ns;
@@ -40,6 +43,114 @@ static struct {
 static void to_rgb(uint32_t *dst) {
     const uint8_t *fb = nes_ppu_framebuffer();
     for (int i = 0; i < NES_WIDTH * NES_HEIGHT; i++) dst[i] = 0xFF000000u | PALETTE[fb[i] & 0x3F];
+}
+
+/* ---- Video filters (operate on NES palette indices, any input size) ---- */
+
+static inline uint8_t px_at(const uint8_t *fb, int w, int h, int x, int y) {
+    x = x < 0 ? 0 : x >= w ? w - 1 : x;
+    y = y < 0 ? 0 : y >= h ? h - 1 : y;
+    return fb[y * w + x];
+}
+
+static inline uint32_t rgb(uint8_t i) { return 0xFF000000u | PALETTE[i & 0x3F]; }
+
+static void filter_scale2x(const uint8_t *fb, int w, int h, uint32_t *out, int pitch) {
+    for (int y = 0; y < h; y++) {
+        uint32_t *r0 = out + (y * 2) * pitch, *r1 = r0 + pitch;
+        for (int x = 0; x < w; x++) {
+            uint8_t B = px_at(fb, w, h, x, y - 1), D = px_at(fb, w, h, x - 1, y), E = fb[y * w + x],
+                    F = px_at(fb, w, h, x + 1, y), H = px_at(fb, w, h, x, y + 1);
+            uint8_t e0 = E, e1 = E, e2 = E, e3 = E;
+            if (B != H && D != F) {
+                e0 = D == B ? D : E;
+                e1 = B == F ? F : E;
+                e2 = D == H ? D : E;
+                e3 = H == F ? F : E;
+            }
+            r0[x * 2] = rgb(e0); r0[x * 2 + 1] = rgb(e1);
+            r1[x * 2] = rgb(e2); r1[x * 2 + 1] = rgb(e3);
+        }
+    }
+}
+
+static void filter_scale3x(const uint8_t *fb, int w, int h, uint32_t *out, int pitch) {
+    for (int y = 0; y < h; y++) {
+        uint32_t *r[3] = {out + (y * 3) * pitch, out + (y * 3 + 1) * pitch, out + (y * 3 + 2) * pitch};
+        for (int x = 0; x < w; x++) {
+            uint8_t A = px_at(fb, w, h, x - 1, y - 1), B = px_at(fb, w, h, x, y - 1),
+                    C = px_at(fb, w, h, x + 1, y - 1), D = px_at(fb, w, h, x - 1, y), E = fb[y * w + x],
+                    F = px_at(fb, w, h, x + 1, y), G = px_at(fb, w, h, x - 1, y + 1),
+                    H = px_at(fb, w, h, x, y + 1), I = px_at(fb, w, h, x + 1, y + 1);
+            uint8_t e[9] = {E, E, E, E, E, E, E, E, E};
+            if (B != H && D != F) {
+                e[0] = D == B ? D : E;
+                e[1] = (D == B && E != C) || (B == F && E != A) ? B : E;
+                e[2] = B == F ? F : E;
+                e[3] = (D == B && E != G) || (D == H && E != A) ? D : E;
+                e[5] = (B == F && E != I) || (H == F && E != C) ? F : E;
+                e[6] = D == H ? D : E;
+                e[7] = (D == H && E != I) || (H == F && E != G) ? H : E;
+                e[8] = H == F ? F : E;
+            }
+            for (int k = 0; k < 9; k++) r[k / 3][x * 3 + k % 3] = rgb(e[k]);
+        }
+    }
+}
+
+/* Always 768x720: three output rows per NES scanline, the last one darker. */
+static void filter_crt(const uint8_t *fb, int w, int h, uint32_t *out, int pitch) {
+    static const int level[3] = {256, 230, 110};
+    for (int r = 0; r < NES_HEIGHT * 3; r++) {
+        const uint8_t *src = fb + (r * h / (NES_HEIGHT * 3)) * w;
+        int lv = level[r % 3];
+        uint32_t *row = out + r * pitch;
+        for (int c = 0; c < NES_WIDTH * 3; c++) {
+            uint32_t v = PALETTE[src[c * w / (NES_WIDTH * 3)] & 0x3F];
+            row[c] = 0xFF000000u | ((((v >> 16) & 0xFF) * lv >> 8) << 16) | ((((v >> 8) & 0xFF) * lv >> 8) << 8) |
+                     ((v & 0xFF) * lv >> 8);
+        }
+    }
+}
+
+/* Convert a w x h frame through the selected filter into the streaming texture. */
+static void upload(const uint8_t *fb, int w, int h) {
+    int f = ui_config.filter, tw = w, th = h;
+    if (f == FILTER_SCALE2X) { tw = w * 2; th = h * 2; }
+    else if (f == FILTER_SCALE3X) { tw = w * 3; th = h * 3; }
+    else if (f == FILTER_CRT) { tw = NES_WIDTH * 3; th = NES_HEIGHT * 3; }
+    if (!G.texture || G.tex_w != tw || G.tex_h != th) {
+        if (G.texture) SDL_DestroyTexture(G.texture);
+        G.texture = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, tw, th);
+        G.tex_w = tw;
+        G.tex_h = th;
+    }
+    SDL_SetTextureScaleMode(G.texture, f == FILTER_CRT ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+    void *pixels;
+    int pitch;
+    if (!SDL_LockTexture(G.texture, NULL, &pixels, &pitch)) return;
+    uint32_t *out = pixels;
+    int p = pitch / 4;
+    switch (f) {
+    case FILTER_SCALE2X: filter_scale2x(fb, w, h, out, p); break;
+    case FILTER_SCALE3X: filter_scale3x(fb, w, h, out, p); break;
+    case FILTER_CRT: filter_crt(fb, w, h, out, p); break;
+    default:
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) out[y * p + x] = rgb(fb[y * w + x]);
+    }
+    SDL_UnlockTexture(G.texture);
+}
+
+/* Nearest-neighbour 2x copy, so real frames match the 2x interpolated ones. */
+static void double_frame(const uint8_t *src, uint8_t *dst) {
+    for (int y = 0; y < NES_HEIGHT * 2; y++)
+        for (int x = 0; x < NES_WIDTH * 2; x++) dst[y * NES_WIDTH * 2 + x] = src[(y / 2) * NES_WIDTH + x / 2];
+}
+
+static void wait_until(uint64_t t_ns) {
+    uint64_t now = SDL_GetTicksNS();
+    if (t_ns > now) SDL_DelayPrecise(t_ns - now);
 }
 
 static void save_screenshot(const char *path) {
@@ -133,6 +244,7 @@ static void present(void) {
 
 void nes_frame_callback(void) {
     long frame = (long)nes_ppu_frame_count();
+    nes_ppu_set_overclock(ui_config.remove_slowdown);
 
     if (G.script_len) {
         while (G.script_pos < G.script_len && G.script_frame[G.script_pos] <= frame)
@@ -148,11 +260,16 @@ void nes_frame_callback(void) {
         handle_events(frame);
         if (!G.script_len) nes_pad[0] = ui_is_open() ? 0 : read_keyboard();
 
-        void *pixels;
-        int pitch;
-        if (SDL_LockTexture(G.texture, NULL, &pixels, &pitch)) {
-            to_rgb(pixels); /* texture pitch == 256*4 */
-            SDL_UnlockTexture(G.texture);
+        /* Frame interpolation: show a generated in-between frame first, then
+         * the real one half a frame later (twice the frame rate). */
+        if (ui_config.frame_interp && !ui_is_open() && nes_ppu_render_interpolated(G.interp_fb, 0.5f)) {
+            upload(G.interp_fb, NES_WIDTH * 2, NES_HEIGHT * 2);
+            present();
+            wait_until(G.next_frame_ns - G.frame_ns / 2);
+            double_frame(nes_ppu_framebuffer(), G.big_fb);
+            upload(G.big_fb, NES_WIDTH * 2, NES_HEIGHT * 2);
+        } else {
+            upload(nes_ppu_framebuffer(), NES_WIDTH, NES_HEIGHT);
         }
         present();
 
@@ -176,7 +293,7 @@ void nes_frame_callback(void) {
 
         /* Pace to the console's frame rate. */
         uint64_t now = SDL_GetTicksNS();
-        if (G.next_frame_ns > now) SDL_DelayPrecise(G.next_frame_ns - now);
+        if (G.next_frame_ns > now) wait_until(G.next_frame_ns);
         else if (now - G.next_frame_ns > 100000000) G.next_frame_ns = now;
         G.next_frame_ns += G.frame_ns;
     }
@@ -231,6 +348,7 @@ static void usage(void) {
             "  --input FILE        scripted input: lines of '<frame> <buttons>' (ABsSUDLR)\n"
             "  --screenshot FILE   save a BMP of the last frame on exit\n"
             "  --cheat ID          enable a cheat (invincible, infinite_lives)\n"
+            "  --overclock         remove slowdown (extra CPU time per frame)\n"
             "  --watch ADDR        with --interpret: log instructions that change RAM byte ADDR (hex)\n"
             "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
 }
@@ -270,6 +388,7 @@ int main(int argc, char **argv) {
             if (k == nes_cheat_count) { fprintf(stderr, "unknown cheat '%s'\n", id); return 2; }
             nes_cheats[k] = 1;
         }
+        else if (!strcmp(a, "--overclock")) ui_config.remove_slowdown = true;
         else if (!strcmp(a, "--watch") && more) opt.watch_addr = (int)strtol(argv[++i], NULL, 16);
         else if (!strcmp(a, "--ram-log") && more) G.ram_log = fopen(argv[++i], "wb");
         else if (a[0] == '-') { usage(); return 2; }
@@ -311,9 +430,6 @@ int main(int argc, char **argv) {
             return 1;
         }
         SDL_SetRenderVSync(G.renderer, 0);
-        G.texture = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                      NES_WIDTH, NES_HEIGHT);
-        SDL_SetTextureScaleMode(G.texture, SDL_SCALEMODE_NEAREST);
         if (!ui_init(G.window, G.renderer)) fprintf(stderr, "warning: menu unavailable\n");
         if (!G.no_audio) {
             SDL_AudioSpec spec = {SDL_AUDIO_S16, 1, 48000};

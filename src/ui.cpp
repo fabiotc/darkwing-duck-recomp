@@ -12,7 +12,7 @@ extern "C" {
 #include "nesrt/recomp.h"
 }
 
-ui_settings ui_config = {80, false};
+ui_settings ui_config = {80, false, FILTER_NONE, false, false};
 
 static SDL_Window *g_window;
 static SDL_Renderer *g_renderer;
@@ -31,6 +31,9 @@ static void load_settings() {
         if (sscanf(line, "%127[^=]=%d", key, &value) != 2) continue;
         if (!strcmp(key, "volume")) ui_config.volume = value < 0 ? 0 : value > 100 ? 100 : value;
         else if (!strcmp(key, "integer_scale")) ui_config.integer_scale = value != 0;
+        else if (!strcmp(key, "filter")) ui_config.filter = value >= 0 && value < FILTER_COUNT ? value : 0;
+        else if (!strcmp(key, "remove_slowdown")) ui_config.remove_slowdown = value != 0;
+        else if (!strcmp(key, "frame_interp")) ui_config.frame_interp = value != 0;
         else if (!strncmp(key, "cheat.", 6))
             for (int i = 0; i < nes_cheat_count; i++)
                 if (!strcmp(key + 6, nes_cheat_defs[i].id)) nes_cheats[i] = value != 0;
@@ -41,7 +44,9 @@ static void load_settings() {
 static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
-    fprintf(f, "volume=%d\ninteger_scale=%d\n", ui_config.volume, ui_config.integer_scale);
+    fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\n",
+            ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
+            ui_config.frame_interp);
     for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i] ? 1 : 0);
     fclose(f);
 }
@@ -137,6 +142,31 @@ void ui_draw(void) {
             snprintf(label, sizeof label, "%dx", s);
             if (ImGui::Button(label)) SDL_SetWindowSize(g_window, NES_WIDTH * s, NES_HEIGHT * s);
         }
+    }
+
+    static const char *filters[FILTER_COUNT] = {"None (sharp pixels)", "Scale2x (smooth edges)",
+                                                 "Scale3x (smooth edges)", "CRT scanlines"};
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    ImGui::Combo("Filter", &ui_config.filter, filters, FILTER_COUNT);
+    help_marker("Scale2x/Scale3x redraw pixel-art edges at higher resolution. CRT imitates the "
+                "scanlines of an old TV, which the art was designed for.");
+
+    ImGui::SeparatorText("Performance");
+    ImGui::Checkbox("Remove slowdown", &ui_config.remove_slowdown);
+    help_marker("Gives the NES CPU twice the time per frame, so scenes with many enemies no longer "
+                "slow down. Game speed and music are unchanged.");
+    ImGui::Checkbox("Frame interpolation (experimental)", &ui_config.frame_interp);
+    {
+        const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(g_window));
+        float game_hz = (float)nes_frame_hz();
+        char tip[256];
+        snprintf(tip, sizeof tip,
+                 "Shows a generated frame between every two real ones (%.0f -> %.0f fps) by sliding "
+                 "sprites and scrolling halfway, for smoother motion. Adds half a frame of delay and "
+                 "can wobble on some objects. Your display runs at %.0f Hz%s.",
+                 game_hz, game_hz * 2, mode ? mode->refresh_rate : 0.0f,
+                 mode && mode->refresh_rate + 1 < game_hz * 2 ? ", too slow to show it" : "");
+        help_marker(tip);
     }
 
     ImGui::SeparatorText("Audio");

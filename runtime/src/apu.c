@@ -254,7 +254,10 @@ static void tick(void) {
 }
 
 void nes_apu_sync(void) {
-    while (A.cycle < nes_cpu_state.cycles) tick();
+    /* The APU stands still during overclock lines so the music keeps its speed. */
+    nes_ppu_sync();
+    uint64_t target = nes_cpu_state.cycles - nes_ppu_paused_cycles();
+    while (A.cycle < target) tick();
 }
 
 size_t nes_apu_take_samples(int16_t *out, size_t max) {
