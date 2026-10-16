@@ -22,10 +22,13 @@ CONTROLS
   Start    Enter                      Gamepad: Start
   Select   Right Shift / Backspace    Gamepad: Back / Select
   Menu     Esc or F1                  Gamepad: Select + Start together
+  Save state F5, load state F9, next slot F6 (also in the menu)
   F11 fullscreen, F12 screenshot
 
-  The menu has cheats (invincible, infinite lives), video filters, removing
-  slowdown, frame interpolation and volume. Settings are remembered.
+  The menu has save states (4 slots), cheats (invincible, infinite lives,
+  infinite special gas, stage select), video filters, sprite flicker
+  removal, slowdown removal, frame interpolation and volume. Settings are
+  remembered.
 
 macOS
   The app isn't signed with an Apple developer account, so the first time

@@ -83,6 +83,11 @@ class Cheat:
     description: str
     returns: list[tuple[int, int]]  # (bank, addr): behave like RTS when enabled
     skips: list[tuple[int, int]]    # (bank, addr): skip the instruction when enabled
+    # (bank, addr, [RAM addresses], unless): before the instruction runs, store
+    # the chosen value into those RAM bytes, unless the first one equals `unless`
+    pokes: list[tuple[int, int, list[int], int | None]] = field(default_factory=list)
+    choices: list[str] = field(default_factory=list)  # menu dropdown entries (empty = on/off)
+    values: list[int] = field(default_factory=list)   # value poked for each choice
 
 
 class Recompiler:
@@ -90,13 +95,19 @@ class Recompiler:
         self.rom = rom
         self.noreturn = set(noreturn)
         self.cheats = list(cheats)
-        # (bank, addr) -> (cheat index, "return" | "skip")
-        self.patches: dict[tuple[int, int], tuple[int, str]] = {}
+        # (bank, addr) -> (cheat index, "return" | "skip" | "poke", RAM addresses, unless)
+        self.patches: dict[tuple[int, int], tuple[int, str, list[int], int | None]] = {}
         for i, ch in enumerate(self.cheats):
+            if ch.pokes and len(ch.values) != len(ch.choices):
+                raise ValueError(f"cheat {ch.id}: 'values' must match 'choices'")
             for key in ch.returns:
-                self.patches[key] = (i, "return")
+                self.patches[key] = (i, "return", [], None)
             for key in ch.skips:
-                self.patches[key] = (i, "skip")
+                self.patches[key] = (i, "skip", [], None)
+            for bank, addr, ram, unless in ch.pokes:
+                if not ram or len(ram) > 4 or any(r >= 0x800 for r in ram):
+                    raise ValueError(f"cheat {ch.id}: poke needs 1-4 RAM addresses ($0000-$07FF)")
+                self.patches[(bank, addr)] = (i, "poke", ram, unless)
 
     # -- decoding -------------------------------------------------------
     def read(self, win: Window, addr: int) -> int:
@@ -191,7 +202,7 @@ class Recompiler:
             f"int {fn}(nes_cpu *c) {{",
             "    uint16_t ea; (void)ea;",
             "dispatch:",
-            "    if (c->quit || BANK_CHANGED) return NES_EXIT;",
+            "    if (c->stop || BANK_CHANGED) return NES_EXIT;",
             "    switch (c->pc) {",
         ]
         out += [f"    case 0x{a:04X}: goto L_{a:04X};" for a in labels]
@@ -209,8 +220,18 @@ class Recompiler:
             ctx = StaticCtx(a, insn.operand, insn.op, win, wc.labels)
             body = emit_instruction(insn.op, ctx)
             patch = self.patches.get((win.bank, a))
-            if patch:
-                idx, kind = patch
+            if patch and patch[1] == "poke":
+                idx, _, ram, unless = patch
+                cond = f"nes_cheats[{idx}]"
+                if unless is not None:
+                    cond += f" && RAM[0x{ram[0]:03X}] != 0x{unless:02X}"
+                out.append(f"    if ({cond}) {{ /* cheat: {self.cheats[idx].id} */")
+                out.append(f"        uint8_t v_ = nes_cheat_defs[{idx}].values[nes_cheats[{idx}] - 1];")
+                out += [f"        RAM[0x{r:03X}] = v_;" for r in ram]
+                out.append("    }")
+                out += ["    " + s for s in body]
+            elif patch:
+                idx, kind, _, _ = patch
                 out.append(f"    if (nes_cheats[{idx}]) {{ /* cheat: {self.cheats[idx].id} */")
                 if kind == "return":
                     rts = OPCODES[0x60]
@@ -240,17 +261,26 @@ class Recompiler:
                '#include "nesrt/recomp.h"', ""]
         def cstr(t: str) -> str:
             return '"' + t.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        for i, c in enumerate(self.cheats):
+            if c.choices:
+                out.append(f"static const char *const cheat{i}_choices[] = {{{', '.join(cstr(t) for t in c.choices)}}};")
+                vals = c.values or list(range(1, len(c.choices) + 1))
+                out.append(f"static const uint8_t cheat{i}_values[] = {{{', '.join(str(v) for v in vals)}}};")
         out.append(f"const int nes_cheat_count = {len(self.cheats)};")
         out.append("const nes_cheat_def nes_cheat_defs[] = {")
-        out += [f"    {{{cstr(c.id)}, {cstr(c.name)}, {cstr(c.description)}}}," for c in self.cheats]
+        for i, c in enumerate(self.cheats):
+            extra = (f", {len(c.choices)}, cheat{i}_choices, cheat{i}_values" if c.choices else ", 0, 0, 0")
+            out.append(f"    {{{cstr(c.id)}, {cstr(c.name)}, {cstr(c.description)}{extra}}},")
         out += ["    {0}", "};"]
         out.append(f"const int nes_patch_count = {len(self.patches)};")
         out.append("const nes_patch_def nes_patch_defs[] = {")
-        for (bank, addr), (idx, kind) in sorted(self.patches.items()):
+        for (bank, addr), (idx, kind, ram, unless) in sorted(self.patches.items()):
             insn = self.decode(Window(bank, (addr >> 14) & 1), addr)
             cyc, size = (insn.op.cycles, insn.op.size) if insn else (2, 1)
-            k = "NES_PATCH_RETURN" if kind == "return" else "NES_PATCH_SKIP"
-            out.append(f"    {{{bank}, 0x{addr:04X}, {idx}, {k}, {cyc}, {size}}},")
+            k = {"return": "NES_PATCH_RETURN", "skip": "NES_PATCH_SKIP", "poke": "NES_PATCH_POKE"}[kind]
+            ram_list = ", ".join(f"0x{r:03X}" for r in ram) or "0"
+            u = -1 if unless is None else unless
+            out.append(f"    {{{bank}, 0x{addr:04X}, {idx}, {k}, {cyc}, {size}, {len(ram)}, {{{ram_list}}}, {u}}},")
         out += ["    {0}", "};", ""]
         for wc in windows:
             out.append(f"int nes_recomp_{wc.window.name}(nes_cpu *c);")

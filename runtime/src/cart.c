@@ -168,3 +168,8 @@ void nes_mapper_write(uint16_t addr, uint8_t v) {
     default: break;
     }
 }
+
+void *nes_mapper_state(size_t *size) {
+    *size = sizeof mmc1;
+    return &mmc1;
+}

@@ -6,6 +6,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The game's data folder (ROM copy, settings, save states), ending in a slash. */
+const char *app_data_dir(void);
+
 /* Where the selected ROM is kept, so it only has to be chosen once. */
 const char *rom_saved_path(void);
 
@@ -16,5 +23,9 @@ char *rom_find(void);
  * and drop), checks it and saves a copy. Returns the saved path, or NULL if
  * the window was closed. */
 char *rom_picker_run(SDL_Window *window, SDL_Renderer *renderer);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

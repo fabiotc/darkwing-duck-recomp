@@ -17,7 +17,15 @@ typedef struct {
     int filter;           /* FILTER_* */
     bool remove_slowdown; /* overclock the CPU so busy scenes don't lag */
     bool frame_interp;    /* show generated in-between frames (2x frame rate) */
+    bool no_flicker;      /* draw more than 8 sprites per line */
+    int state_slot;       /* 1..UI_STATE_SLOTS */
 } ui_settings;
+
+#define UI_STATE_SLOTS 4
+enum { UI_REQ_NONE, UI_REQ_SAVE, UI_REQ_LOAD };
+int ui_take_request(void);         /* save/load clicked in the menu (UI_REQ_*) */
+void ui_toast(const char *message); /* short on-screen notice */
+void ui_state_path(int slot, char *out, size_t len);
 
 extern ui_settings ui_config;
 extern bool ui_cheats_available; /* false when running a ROM version the cheats weren't made for */

@@ -9,13 +9,23 @@
 
 #define ROM_NAME "darkwing-duck.nes"
 
-const char *rom_saved_path(void) {
-    static char path[1024];
-    if (!path[0]) {
+const char *app_data_dir(void) {
+    static char dir[1024];
+    if (!dir[0]) {
         char *pref = SDL_GetPrefPath("darkwing-duck-recomp", "darkwing-duck");
         if (!pref) return NULL;
-        snprintf(path, sizeof path, "%s%s", pref, ROM_NAME);
+        snprintf(dir, sizeof dir, "%s", pref);
         SDL_free(pref);
+    }
+    return dir;
+}
+
+const char *rom_saved_path(void) {
+    static char path[1100];
+    if (!path[0]) {
+        const char *dir = app_data_dir();
+        if (!dir) return NULL;
+        snprintf(path, sizeof path, "%s%s", dir, ROM_NAME);
     }
     return path;
 }

@@ -24,7 +24,8 @@ typedef struct nes_cpu {
     uint64_t cycles;      /* CPU cycles since power-on */
     uint64_t event_cycle; /* call nes_poll() once cycles reaches this */
     bool nmi_pending;
-    bool quit;
+    bool quit; /* the player wants to exit */
+    bool stop; /* leave recompiled code at the next safe point (set together with quit) */
 } nes_cpu;
 
 extern nes_cpu nes_cpu_state;
@@ -95,6 +96,7 @@ uint64_t nes_ppu_frame_count(void);
 /* Enhancements (off by default, not part of the original hardware). */
 void nes_ppu_set_overclock(bool on);   /* extra CPU time per frame: removes slowdown */
 uint64_t nes_ppu_paused_cycles(void);  /* CPU cycles spent in overclock lines */
+void nes_ppu_set_unlimited_sprites(bool on); /* lift the 8-sprites-per-line limit */
 /* Render a frame between the previous and the latest one (t in 0..1) at
  * twice the resolution: out must hold 512x480 palette indices. */
 bool nes_ppu_render_interpolated(uint8_t *out, float t);
@@ -123,11 +125,21 @@ typedef struct nes_options {
 
 /* Called by the PPU once per frame at the start of vblank. The frontend
  * presents the picture, polls input and paces emulation here. Set
- * nes_cpu_state.quit to stop. */
+ * nes_cpu_state.quit to exit. */
 extern void nes_frame_callback(void);
 
 void nes_power_on(const nes_options *opt);
 void nes_run(void); /* runs until nes_cpu_state.quit */
+
+/* Run fn between two instructions, as soon as possible. The frame callback is
+ * called mid-instruction, so anything that reads or replaces the whole machine
+ * state (save states) must go through this. */
+typedef void (*nes_safe_point_fn)(void *user);
+void nes_at_safe_point(nes_safe_point_fn fn, void *user);
+
+/* Save states. Files are tied to this build (struct layouts), not portable. */
+bool nes_state_save(const char *path, char *err, size_t errlen);
+bool nes_state_load(const char *path, char *err, size_t errlen);
 double nes_cpu_hz(void);
 double nes_frame_hz(void);
 

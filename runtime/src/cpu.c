@@ -12,8 +12,10 @@ uint8_t nes_pad[2];
 uint8_t nes_cheats[64];
 
 static nes_options opts;
-static uint8_t pad_shift[2];
-static bool pad_strobe;
+static struct {
+    uint8_t shift[2];
+    bool strobe;
+} pads;
 
 /* ---- Trace: set of (bank, addr) block starts run by the interpreter ---- */
 
@@ -74,9 +76,9 @@ uint8_t nes_io_read(uint16_t a) {
     }
     if (a == 0x4016 || a == 0x4017) {
         int i = a & 1;
-        if (pad_strobe) return 0x40 | (nes_pad[i] & 1);
-        uint8_t r = pad_shift[i] & 1;
-        pad_shift[i] = (uint8_t)((pad_shift[i] >> 1) | 0x80);
+        if (pads.strobe) return 0x40 | (nes_pad[i] & 1);
+        uint8_t r = pads.shift[i] & 1;
+        pads.shift[i] = (uint8_t)((pads.shift[i] >> 1) | 0x80);
         return 0x40 | r;
     }
     if (a >= 0x6000 && a < 0x8000) return nes_bus_state.prg_ram[a & 0x1FFF];
@@ -95,10 +97,10 @@ void nes_io_write(uint16_t a, uint8_t v) {
         nes_ppu_oam_dma(page);
         c->cycles += 513 + (c->cycles & 1);
     } else if (a == 0x4016) {
-        pad_strobe = v & 1;
-        if (pad_strobe) {
-            pad_shift[0] = nes_pad[0];
-            pad_shift[1] = nes_pad[1];
+        pads.strobe = v & 1;
+        if (pads.strobe) {
+            pads.shift[0] = nes_pad[0];
+            pads.shift[1] = nes_pad[1];
         }
     } else if (a <= 0x4017) {
         nes_apu_sync();
@@ -125,7 +127,7 @@ int nes_poll(nes_cpu *c, uint16_t pc) {
     nes_ppu_sync();
     nes_apu_sync();
     c->event_cycle = nes_ppu_next_event();
-    if (c->quit) {
+    if (c->stop) {
         c->pc = pc;
         return 1;
     }
@@ -188,6 +190,12 @@ static int interp_patch(nes_cpu *c) {
         if (p->addr != c->pc || !nes_cheats[p->cheat] ||
             p->bank != nes_bus_state.prg_bank16[(c->pc >> 14) & 1])
             continue;
+        if (p->kind == NES_PATCH_POKE) {
+            if (p->unless >= 0 && RAM[p->ram[0]] == p->unless) return -1;
+            uint8_t v = nes_cheat_defs[p->cheat].values[nes_cheats[p->cheat] - 1];
+            for (int k = 0; k < p->ram_count; k++) RAM[p->ram[k]] = v;
+            return -1; /* then run the instruction normally */
+        }
         if (p->kind == NES_PATCH_SKIP) {
             CYC(p->cycles);
             c->pc = (uint16_t)(c->pc + p->size);
@@ -221,12 +229,32 @@ static void watch_block(nes_cpu *c) {
         if (before != after)
             fprintf(stderr, "watch $%04X: %02X -> %02X by %02X:%04X (frame %llu)\n", opts.watch_addr, before,
                     after, bank, pc, (unsigned long long)nes_ppu_frame_count());
-    } while (!done && !c->quit);
+    } while (!done && !c->stop);
+}
+
+static nes_safe_point_fn safe_fn;
+static void *safe_user;
+
+void nes_at_safe_point(nes_safe_point_fn fn, void *user) {
+    safe_fn = fn;
+    safe_user = user;
+    nes_cpu_state.stop = true;
+    nes_cpu_state.event_cycle = 0; /* poll (and so stop) at the next control transfer */
 }
 
 void nes_run(void) {
     nes_cpu *c = &nes_cpu_state;
-    while (!c->quit) {
+    for (;;) {
+        if (c->stop || c->quit) {
+            c->stop = false;
+            if (safe_fn) {
+                nes_safe_point_fn fn = safe_fn;
+                safe_fn = NULL;
+                fn(safe_user);
+            }
+            if (c->quit) break;
+            continue;
+        }
         if (!opts.interpret_only && c->pc >= 0x8000) {
             int w = (c->pc >> 14) & 1, bank = nes_bus_state.prg_bank16[w];
             nes_recomp_fn f = bank < nes_recomp_bank_count ? nes_recomp_table[bank][w] : NULL;
@@ -244,8 +272,13 @@ void nes_run(void) {
             continue;
         }
         do nes_stats_state.interp_insns++;
-        while (!interp_step(c) && !c->quit);
+        while (!interp_step(c) && !c->stop);
     }
 }
 
 void nes_shutdown(void) { trace_flush(); }
+
+void *nes_pads_state(size_t *size) {
+    *size = sizeof pads;
+    return &pads;
+}

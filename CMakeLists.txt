@@ -64,6 +64,7 @@ add_library(nesrt STATIC
   runtime/src/cpu.c
   runtime/src/ppu.c
   runtime/src/apu.c
+  runtime/src/state.c
   "${GEN_DIR}/interp_gen.c")
 target_include_directories(nesrt PUBLIC runtime/include)
 

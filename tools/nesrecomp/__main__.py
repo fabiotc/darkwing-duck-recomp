@@ -59,7 +59,9 @@ def cmd_recompile(args) -> int:
     rc = cfg.get("recomp", {})
     cheats = [Cheat(c["id"], c["name"], c.get("description", ""),
                     [parse_entry(e) for e in c.get("return", [])],
-                    [parse_entry(e) for e in c.get("skip", [])])
+                    [parse_entry(e) for e in c.get("skip", [])],
+                    [(*parse_entry(p["at"]), [int(r, 16) for r in p["ram"]], p.get("unless")) for p in c.get("poke", [])],
+                    c.get("choices", []), c.get("values", []))
               for c in cfg.get("cheats", [])]
     rec = Recompiler(rom, {int(a, 16) for a in rc.get("noreturn", [])}, cheats)
     seeds = rec.default_seeds()

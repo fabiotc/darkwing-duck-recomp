@@ -17,18 +17,26 @@ extern const uint32_t nes_recomp_prg_crc32;
 extern const nes_recomp_fn nes_recomp_table[][2];
 
 /* Cheats: runtime-toggleable patches declared in the game config. */
-typedef struct { const char *id, *name, *description; } nes_cheat_def;
-enum { NES_PATCH_RETURN = 1, NES_PATCH_SKIP = 2 };
+typedef struct {
+    const char *id, *name, *description;
+    int choice_count;            /* 0 = simple on/off cheat */
+    const char *const *choices;  /* menu entries */
+    const uint8_t *values;       /* value poked for each choice */
+} nes_cheat_def;
+enum { NES_PATCH_RETURN = 1, NES_PATCH_SKIP = 2, NES_PATCH_POKE = 3 };
 typedef struct {
     uint8_t bank;
     uint16_t addr;
     uint8_t cheat, kind, cycles, size;
+    uint8_t ram_count;
+    uint16_t ram[4]; /* NES_PATCH_POKE targets */
+    int16_t unless;  /* poke only if RAM[ram[0]] != unless (-1 = always) */
 } nes_patch_def;
 extern const int nes_cheat_count;
 extern const nes_cheat_def nes_cheat_defs[];
 extern const int nes_patch_count;
 extern const nes_patch_def nes_patch_defs[];
-extern uint8_t nes_cheats[]; /* nonzero = enabled, indexed like nes_cheat_defs */
+extern uint8_t nes_cheats[]; /* 0 = off, else 1 or (choice index + 1); indexed like nes_cheat_defs */
 
 /* Runtime entry points used by generated code. */
 int nes_poll(nes_cpu *c, uint16_t pc); /* 1 if control was redirected */

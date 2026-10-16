@@ -364,3 +364,8 @@ void nes_apu_write(uint16_t reg, uint8_t v) {
     default: break;
     }
 }
+
+void *nes_apu_state(size_t *size) {
+    *size = sizeof A;
+    return &A;
+}

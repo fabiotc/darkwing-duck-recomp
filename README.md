@@ -98,6 +98,7 @@ and restored on the next launch.
 |---|---|
 | Filter: Scale2x / Scale3x | Redraws pixel-art edges at 2x/3x resolution so diagonals look smooth |
 | Filter: CRT scanlines | Imitates the scanlines of the TVs the art was designed for |
+| Remove sprite flicker | Lifts the NES limit of 8 sprites per scanline, so busy scenes stop flickering. Game logic still sees the hardware's overflow flag, so gameplay is identical |
 | Remove slowdown | Doubles the CPU time per frame (extra idle vblank scanlines) so busy scenes don't lag. Game speed and music stay the same because the APU is paused during the extra lines. Command line: `--overclock` |
 | Frame interpolation (experimental) | Shows a generated frame between each pair of real ones (50 to 100 fps). It's rendered at 2x resolution so objects moving 1 px per frame can be drawn half a pixel along. Sprites are matched between frames by tile, and each scanline's scroll is interpolated. Adds half a frame of latency, and animation changes can't be interpolated. Needs a display of at least 100 Hz |
 
@@ -109,6 +110,14 @@ why interpolation generates extra frames instead.
 |---|---|
 | Invincible | Enemies and projectiles can't hurt Darkwing (pits still do) |
 | Infinite lives | Dying doesn't decrease the lives counter |
+| Infinite special gas | Thunder, Heavy and Arrow gas shots cost nothing (pick some up first) |
+| Stage select | Choose any of the 7 stages, including the final one. Then pick any location on the map |
+
+### Save states
+
+Save anywhere in 4 slots: **F5** save, **F9** load, **F6** next slot, or use the menu
+(the only option on a gamepad). States are stored in the data folder and only work
+with the same build of the game.
 
 Cheats are **code patches**, not memory pokes. They're declared in
 `config/darkwing_duck.toml` and compiled into the game as runtime switches:
@@ -122,6 +131,9 @@ return = ["07:F9C2"]   # the damage routine returns immediately when enabled
 
 * `return = ["BANK:ADDR"]` makes the instruction at that address act as `RTS`.
 * `skip = ["BANK:ADDR"]` skips that instruction.
+* `poke = [{ at = "BANK:ADDR", ram = ["0031"] }]` with `choices`/`values` stores the
+  value chosen in a menu dropdown into RAM just before that instruction runs (how
+  stage select works).
 
 New cheats show up in the menu automatically after a rebuild. They can also be enabled
 from the command line with `--cheat invincible`.
@@ -137,9 +149,18 @@ Two debug options help locate game variables and the code that changes them:
   watch $05B4: 80 -> 82 by 07:F9F3 (frame 4474)
   ```
 
-Things found so far: health is stored in the HUD heart tiles (`$05B2`–`$05B8`, one
-per quarter heart), the damage routine is at `$F9C2`, and lives are two digit tiles
-at `$05E4`/`$05E6` (`$70` = "0").
+Things found so far:
+
+| What | Where |
+|---|---|
+| Health | HUD heart tiles `$05B2`–`$05B8`, one per quarter heart; damage routine `$F9C2` |
+| Lives | digit tiles `$05E4`/`$05E6` (`$70` = "0"); decremented at `$CB15` |
+| Special gas | digit tiles `$05BE`/`$05C0`; bank 6 `$8982` adds a signed amount (shots −2/−3, pickups +1/+10) |
+| Stage | `$31` (0–2, then 3–5, then 6 = final); `$38` = stages cleared; `$6C` = map cursor; bank 4 `$8000` loads a stage |
+| Game state | `$50` (e.g. `$06` hurt, `$11` stage clear) |
+
+Public Game Genie codes are a good shortcut. Each one is a ROM address plus a value, and
+two of them pointed at exactly the instructions found above.
 
 ## How it works
 

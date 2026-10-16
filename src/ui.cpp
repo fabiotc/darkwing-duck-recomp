@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 
+#include "rom_select.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
@@ -12,13 +13,32 @@ extern "C" {
 #include "nesrt/recomp.h"
 }
 
-ui_settings ui_config = {80, false, FILTER_NONE, false, false};
+ui_settings ui_config = {80, false, FILTER_NONE, false, false, false, 1};
 bool ui_cheats_available = true;
 
 static SDL_Window *g_window;
 static SDL_Renderer *g_renderer;
 static bool g_open;
 static std::string g_settings_path;
+static int g_request;
+static char g_toast[160];
+static uint64_t g_toast_until;
+
+int ui_take_request(void) {
+    int r = g_request;
+    g_request = UI_REQ_NONE;
+    return r;
+}
+
+void ui_toast(const char *message) {
+    snprintf(g_toast, sizeof g_toast, "%s", message);
+    g_toast_until = SDL_GetTicks() + 2000;
+}
+
+void ui_state_path(int slot, char *out, size_t len) {
+    const char *dir = app_data_dir();
+    snprintf(out, len, "%sstate%d.sav", dir ? dir : "", slot);
+}
 
 /* ---- Settings file: simple "key=value" lines in the user's pref dir --- */
 
@@ -35,9 +55,14 @@ static void load_settings() {
         else if (!strcmp(key, "filter")) ui_config.filter = value >= 0 && value < FILTER_COUNT ? value : 0;
         else if (!strcmp(key, "remove_slowdown")) ui_config.remove_slowdown = value != 0;
         else if (!strcmp(key, "frame_interp")) ui_config.frame_interp = value != 0;
+        else if (!strcmp(key, "no_flicker")) ui_config.no_flicker = value != 0;
+        else if (!strcmp(key, "state_slot")) ui_config.state_slot = value >= 1 && value <= UI_STATE_SLOTS ? value : 1;
         else if (!strncmp(key, "cheat.", 6))
             for (int i = 0; i < nes_cheat_count; i++)
-                if (!strcmp(key + 6, nes_cheat_defs[i].id)) nes_cheats[i] = value != 0;
+                if (!strcmp(key + 6, nes_cheat_defs[i].id)) {
+                    int max = nes_cheat_defs[i].choice_count ? nes_cheat_defs[i].choice_count : 1;
+                    nes_cheats[i] = (uint8_t)(value >= 0 && value <= max ? value : 0);
+                }
     }
     fclose(f);
 }
@@ -45,10 +70,11 @@ static void load_settings() {
 static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
-    fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\n",
+    fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\nno_flicker=%d\n"
+               "state_slot=%d\n",
             ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
-            ui_config.frame_interp);
-    for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i] ? 1 : 0);
+            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot);
+    for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i]);
     fclose(f);
 }
 
@@ -159,8 +185,26 @@ int ui_rom_picker(const char *message, bool can_use_anyway, bool warn, const cha
     return action;
 }
 
+static void draw_toast() {
+    if (SDL_GetTicks() >= g_toast_until) return;
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->Pos.x + 12, vp->Pos.y + vp->Size.y - 12), ImGuiCond_Always, ImVec2(0, 1));
+    ImGui::SetNextWindowBgAlpha(0.75f);
+    ImGui::Begin("##toast", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+    ImGui::TextUnformatted(g_toast);
+    ImGui::End();
+}
+
 void ui_draw(void) {
-    if (!g_open) return;
+    if (!g_open) {
+        if (SDL_GetTicks() >= g_toast_until) return;
+        begin_frame();
+        draw_toast();
+        end_frame();
+        return;
+    }
     begin_frame();
 
     /* Dim the paused game behind the menu. */
@@ -170,13 +214,47 @@ void ui_draw(void) {
     ImGui::Begin("Darkwing Duck - Options", nullptr,
                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
 
+    ImGui::SeparatorText("Save states");
+    for (int slot = 1; slot <= UI_STATE_SLOTS; slot++) {
+        char path[1200], label[96];
+        ui_state_path(slot, path, sizeof path);
+        SDL_PathInfo info;
+        if (SDL_GetPathInfo(path, &info)) {
+            SDL_DateTime dt;
+            SDL_TimeToDateTime(info.modify_time, &dt, true);
+            snprintf(label, sizeof label, "Slot %d  (%04d-%02d-%02d %02d:%02d)", slot, dt.year, dt.month, dt.day,
+                     dt.hour, dt.minute);
+        } else {
+            snprintf(label, sizeof label, "Slot %d  (empty)", slot);
+        }
+        ImGui::RadioButton(label, &ui_config.state_slot, slot);
+    }
+    if (ImGui::Button("Save state")) { g_request = UI_REQ_SAVE; ui_toggle(); }
+    ImGui::SameLine();
+    if (ImGui::Button("Load state")) { g_request = UI_REQ_LOAD; ui_toggle(); }
+    ImGui::SameLine();
+    ImGui::TextDisabled("F5 save, F9 load, F6 next slot");
+
     ImGui::SeparatorText("Cheats");
     if (!ui_cheats_available) ImGui::TextDisabled("Cheats need the supported ROM version (Europe).");
     else if (nes_cheat_count == 0) ImGui::TextDisabled("No cheats defined in the game config.");
     for (int i = 0; ui_cheats_available && i < nes_cheat_count; i++) {
-        bool on = nes_cheats[i] != 0;
-        if (ImGui::Checkbox(nes_cheat_defs[i].name, &on)) nes_cheats[i] = on;
-        help_marker(nes_cheat_defs[i].description);
+        const nes_cheat_def *def = &nes_cheat_defs[i];
+        if (def->choice_count > 0) {
+            /* Dropdown: "Off" plus the cheat's choices (stored as index + 1). */
+            int sel = nes_cheats[i] <= def->choice_count ? nes_cheats[i] : 0;
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+            if (ImGui::BeginCombo(def->name, sel ? def->choices[sel - 1] : "Off")) {
+                if (ImGui::Selectable("Off", sel == 0)) nes_cheats[i] = 0;
+                for (int k = 0; k < def->choice_count; k++)
+                    if (ImGui::Selectable(def->choices[k], sel == k + 1)) nes_cheats[i] = (uint8_t)(k + 1);
+                ImGui::EndCombo();
+            }
+        } else {
+            bool on = nes_cheats[i] != 0;
+            if (ImGui::Checkbox(def->name, &on)) nes_cheats[i] = on;
+        }
+        help_marker(def->description);
     }
 
     ImGui::SeparatorText("Video");
@@ -196,10 +274,14 @@ void ui_draw(void) {
 
     static const char *filters[FILTER_COUNT] = {"None (sharp pixels)", "Scale2x (smooth edges)",
                                                  "Scale3x (smooth edges)", "CRT scanlines"};
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
     ImGui::Combo("Filter", &ui_config.filter, filters, FILTER_COUNT);
     help_marker("Scale2x/Scale3x redraw pixel-art edges at higher resolution. CRT imitates the "
                 "scanlines of an old TV, which the art was designed for.");
+
+    ImGui::Checkbox("Remove sprite flicker", &ui_config.no_flicker);
+    help_marker("The NES can only show 8 sprites per line, so games flicker when more are on screen. "
+                "This draws all of them. Gameplay is unaffected.");
 
     ImGui::SeparatorText("Performance");
     ImGui::Checkbox("Remove slowdown", &ui_config.remove_slowdown);
@@ -230,5 +312,6 @@ void ui_draw(void) {
     ImGui::TextDisabled("Esc / F1 / Select+Start");
 
     ImGui::End();
+    draw_toast();
     end_frame();
 }

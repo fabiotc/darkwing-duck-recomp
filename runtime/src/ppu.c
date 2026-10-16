@@ -36,6 +36,7 @@ static struct {
     int newest;               /* index into done[] of the latest frame */
     uint64_t done_count;
     int extra_lines, extra_active; /* overclock: idle vblank lines added per frame */
+    bool unlimited_sprites;        /* draw more than 8 sprites per scanline (no flicker) */
     uint64_t paused_dots;          /* dots spent in overclock lines (APU is paused) */
 } P;
 
@@ -153,8 +154,8 @@ static void render_line_ex(int y, const line_state *ls, const uint8_t *oam, uint
             int row = y - 1 - s[0];
             if (row < 0 || row >= h) continue;
             if (++found > 8) {
-                *overflow = true;
-                break;
+                *overflow = true; /* still reported, so game logic is unchanged */
+                if (!P.unlimited_sprites) break;
             }
             if (s[2] & 0x80) row = h - 1 - row;
             uint16_t addr;
@@ -220,7 +221,10 @@ static void step(void) {
             nes_cpu_state.event_cycle = 0;
         }
         nes_frame_callback();
-        if (nes_cpu_state.quit) nes_cpu_state.event_cycle = 0;
+        if (nes_cpu_state.quit) {
+            nes_cpu_state.stop = true;
+            nes_cpu_state.event_cycle = 0;
+        }
     } else if (P.line == prerender) {
         if (P.dot == 1) {
             P.status &= 0x1F;
@@ -338,6 +342,13 @@ void nes_ppu_set_overclock(bool on) {
     /* Doubling the frame's CPU time removes nearly all game slowdown. */
     P.extra_lines = on ? P.lines_per_frame : 0;
 }
+
+void *nes_ppu_state(size_t *size) {
+    *size = sizeof P;
+    return &P;
+}
+
+void nes_ppu_set_unlimited_sprites(bool on) { P.unlimited_sprites = on; }
 
 uint64_t nes_ppu_paused_cycles(void) { return P.pal_timing ? P.paused_dots * 5 / 16 : P.paused_dots / 3; }
 

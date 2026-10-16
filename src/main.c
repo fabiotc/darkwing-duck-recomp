@@ -36,6 +36,8 @@ static struct {
     SDL_Gamepad *gamepad;
     uint64_t next_frame_ns, frame_ns;
     bool hold_menu_buttons; /* ignore Select/Start until released after the menu combo */
+    long save_at_frame;     /* --save-state-at (testing) */
+    const char *save_at_path;
     /* scripted input: sorted (frame, buttons) changes */
     long *script_frame;
     uint8_t *script_buttons;
@@ -198,6 +200,40 @@ static uint8_t read_keyboard(void) {
     return b;
 }
 
+/* ---- Save states (run at a safe point between instructions) ---------- */
+
+static char state_file[1200];
+
+static void do_save_state(void *user) {
+    (void)user;
+    char err[256], msg[300];
+    if (nes_state_save(state_file, err, sizeof err))
+        snprintf(msg, sizeof msg, "Saved to slot %d", ui_config.state_slot);
+    else
+        snprintf(msg, sizeof msg, "Save failed: %s", err);
+    if (G.headless) fprintf(stderr, "%s\n", msg);
+    else ui_toast(msg);
+}
+
+static void do_load_state(void *user) {
+    (void)user;
+    char err[256], msg[300];
+    if (nes_state_load(state_file, err, sizeof err)) {
+        snprintf(msg, sizeof msg, "Loaded slot %d", ui_config.state_slot);
+        G.next_frame_ns = SDL_GetTicksNS() + G.frame_ns;
+        if (G.audio) SDL_ClearAudioStream(G.audio);
+    } else {
+        snprintf(msg, sizeof msg, "Can't load slot %d: %s", ui_config.state_slot, err);
+    }
+    if (G.headless) fprintf(stderr, "%s\n", msg);
+    else ui_toast(msg);
+}
+
+static void request_state(int req) {
+    ui_state_path(ui_config.state_slot, state_file, sizeof state_file);
+    nes_at_safe_point(req == UI_REQ_SAVE ? do_save_state : do_load_state, NULL);
+}
+
 static void handle_events(long frame) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -211,6 +247,15 @@ static void handle_events(long frame) {
             case SDL_SCANCODE_F11:
                 SDL_SetWindowFullscreen(G.window, !(SDL_GetWindowFlags(G.window) & SDL_WINDOW_FULLSCREEN));
                 break;
+            case SDL_SCANCODE_F5: request_state(UI_REQ_SAVE); break;
+            case SDL_SCANCODE_F9: request_state(UI_REQ_LOAD); break;
+            case SDL_SCANCODE_F6: {
+                char msg[32];
+                ui_config.state_slot = ui_config.state_slot % UI_STATE_SLOTS + 1;
+                snprintf(msg, sizeof msg, "Slot %d", ui_config.state_slot);
+                ui_toast(msg);
+                break;
+            }
             case SDL_SCANCODE_F12: {
                 char name[64];
                 snprintf(name, sizeof name, "screenshot-%ld.bmp", frame);
@@ -255,6 +300,11 @@ static void present(void) {
 void nes_frame_callback(void) {
     long frame = (long)nes_ppu_frame_count();
     nes_ppu_set_overclock(ui_config.remove_slowdown);
+    nes_ppu_set_unlimited_sprites(ui_config.no_flicker);
+    if (G.save_at_path && frame == G.save_at_frame) {
+        snprintf(state_file, sizeof state_file, "%s", G.save_at_path);
+        nes_at_safe_point(do_save_state, NULL);
+    }
 
     if (G.script_len) {
         while (G.script_pos < G.script_len && G.script_frame[G.script_pos] <= frame)
@@ -297,6 +347,8 @@ void nes_frame_callback(void) {
             present();
         }
         if (G.next_frame_ns < SDL_GetTicksNS()) G.next_frame_ns = SDL_GetTicksNS();
+        int req = ui_take_request();
+        if (req != UI_REQ_NONE) request_state(req);
 
         int16_t buf[4096];
         size_t n;
@@ -365,15 +417,18 @@ static void usage(void) {
             "  --frames N          quit after N frames\n"
             "  --input FILE        scripted input: lines of '<frame> <buttons>' (ABsSUDLR)\n"
             "  --screenshot FILE   save a BMP of the last frame on exit\n"
-            "  --cheat ID          enable a cheat (invincible, infinite_lives)\n"
+            "  --cheat ID[=N]      enable a cheat, e.g. invincible or stage_select=5\n"
             "  --overclock         remove slowdown (extra CPU time per frame)\n"
+            "  --no-flicker        draw more than 8 sprites per line\n"
+            "  --save-state-at N FILE   save a state at frame N\n"
+            "  --load-state FILE   start from a save state\n"
             "  --watch ADDR        with --interpret: log instructions that change RAM byte ADDR (hex)\n"
             "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
 }
 
 int main(int argc, char **argv) {
     nes_options opt = {.watch_addr = -1};
-    const char *rom = NULL, *region = NULL;
+    const char *rom = NULL, *region = NULL, *load_state = NULL;
     int scale = 3;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -388,13 +443,26 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--input") && more) G.input_script = argv[++i];
         else if (!strcmp(a, "--screenshot") && more) G.screenshot = argv[++i];
         else if (!strcmp(a, "--cheat") && more) {
-            const char *id = argv[++i];
+            /* --cheat ID, or --cheat ID=N for cheats with choices (N = 1..choices) */
+            char id[64];
+            snprintf(id, sizeof id, "%s", argv[++i]);
+            char *eq = strchr(id, '=');
+            int value = 1;
+            if (eq) { *eq = 0; value = atoi(eq + 1); }
             int k = 0;
             while (k < nes_cheat_count && strcmp(nes_cheat_defs[k].id, id)) k++;
             if (k == nes_cheat_count) { fprintf(stderr, "unknown cheat '%s'\n", id); return 2; }
-            nes_cheats[k] = 1;
+            int max = nes_cheat_defs[k].choice_count ? nes_cheat_defs[k].choice_count : 1;
+            if (value < 1 || value > max) { fprintf(stderr, "cheat '%s' takes 1..%d\n", id, max); return 2; }
+            nes_cheats[k] = (uint8_t)value;
         }
         else if (!strcmp(a, "--overclock")) ui_config.remove_slowdown = true;
+        else if (!strcmp(a, "--no-flicker")) ui_config.no_flicker = true;
+        else if (!strcmp(a, "--load-state") && more) load_state = argv[++i];
+        else if (!strcmp(a, "--save-state-at") && i + 2 < argc) {
+            G.save_at_frame = atol(argv[++i]);
+            G.save_at_path = argv[++i];
+        }
         else if (!strcmp(a, "--watch") && more) opt.watch_addr = (int)strtol(argv[++i], NULL, 16);
         else if (!strcmp(a, "--ram-log") && more) G.ram_log = fopen(argv[++i], "wb");
         else if (a[0] == '-') { usage(); return 2; }
@@ -456,6 +524,13 @@ int main(int argc, char **argv) {
     }
 
     nes_power_on(&opt);
+    if (load_state) {
+        char err[256];
+        if (!nes_state_load(load_state, err, sizeof err)) {
+            fprintf(stderr, "error: %s: %s\n", load_state, err);
+            return 1;
+        }
+    }
     G.frame_ns = (uint64_t)(1e9 / nes_frame_hz());
     G.next_frame_ns = SDL_GetTicksNS() + G.frame_ns;
     nes_run();

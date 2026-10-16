@@ -32,3 +32,23 @@ name = "Infinite lives"
 description = "Losing a life doesn't decrease the lives counter."
 # Lives are two digit tiles: $05E4 (tens) and $05E6 (ones, $70 = '0').
 skip = ["07:CB15"]  # DEC $05E6
+
+[[cheats]]
+id = "infinite_gas"
+name = "Infinite special gas"
+description = "Special gas shots (Thunder, Heavy, Arrow) cost nothing. Pick up some gas first."
+# $8982 (bank 6) adds a signed amount to the gas counter (digit tiles $05BE/$05C0);
+# shots call it with -2/-3, pickups with +1/+10. $89A0 is the subtract path.
+return = ["06:89A0"]
+
+[[cheats]]
+id = "stage_select"
+name = "Stage select"
+description = "Pick any location on the map and the chosen stage starts instead, including the final stage."
+# $31 is the stage number: the map assigns 0-2 in the first round, 3-5 once
+# $38 (stages cleared) reaches 3, and 6 (final) once it reaches 6. Bank 4 $8000
+# is the stage loader (LDX $31); the map itself doesn't go through it.
+choices = ["Bridge at night", "City streets", "Sewers", "Construction site", "Forest",
+           "Waterfront", "The ship (final stage)"]
+values = [0,1,2,3,4,5,6]
+poke = [{ at = "04:8000", ram = ["0031"] }]
