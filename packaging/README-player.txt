@@ -25,6 +25,9 @@ CONTROLS
   Save state F5, load state F9, next slot F6 (also in the menu)
   F11 fullscreen, F12 screenshot
 
+  Custom background: put an image named bezel.png or bezel.jpg in the data
+  folder (see below) and choose Background > Custom image in the menu.
+
   The menu has save states (4 slots), cheats (invincible, infinite lives,
   infinite special gas, stage select), video filters, sprite flicker
   removal, slowdown removal, frame interpolation and volume. Settings are

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 
+#include "bezel.h"
 #include "rom_select.h"
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -13,7 +14,7 @@ extern "C" {
 #include "nesrt/recomp.h"
 }
 
-ui_settings ui_config = {80, false, FILTER_NONE, false, false, false, 1};
+ui_settings ui_config = {80, false, FILTER_NONE, false, false, false, 1, BEZEL_PATTERN};
 bool ui_cheats_available = true;
 
 static SDL_Window *g_window;
@@ -56,6 +57,7 @@ static void load_settings() {
         else if (!strcmp(key, "remove_slowdown")) ui_config.remove_slowdown = value != 0;
         else if (!strcmp(key, "frame_interp")) ui_config.frame_interp = value != 0;
         else if (!strcmp(key, "no_flicker")) ui_config.no_flicker = value != 0;
+        else if (!strcmp(key, "bezel")) ui_config.bezel = value >= 0 && value < BEZEL_COUNT ? value : BEZEL_PATTERN;
         else if (!strcmp(key, "state_slot")) ui_config.state_slot = value >= 1 && value <= UI_STATE_SLOTS ? value : 1;
         else if (!strncmp(key, "cheat.", 6))
             for (int i = 0; i < nes_cheat_count; i++)
@@ -71,9 +73,9 @@ static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\nno_flicker=%d\n"
-               "state_slot=%d\n",
+               "state_slot=%d\nbezel=%d\n",
             ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
-            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot);
+            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel);
     for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i]);
     fclose(f);
 }
@@ -279,6 +281,26 @@ void ui_draw(void) {
     help_marker("Scale2x/Scale3x redraw pixel-art edges at higher resolution. CRT imitates the "
                 "scanlines of an old TV, which the art was designed for.");
 
+    static const char *bezels[BEZEL_COUNT] = {"Pattern (built-in)", "Custom image", "Black bars"};
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
+    int prev_bezel = ui_config.bezel;
+    ImGui::Combo("Background", &ui_config.bezel, bezels, BEZEL_COUNT);
+    if (ui_config.bezel == BEZEL_CUSTOM && prev_bezel != BEZEL_CUSTOM) bezel_reload_custom();
+    help_marker("What fills the space around the picture. For a custom image, put bezel.png or "
+                "bezel.jpg in the game's data folder.");
+    if (ui_config.bezel == BEZEL_CUSTOM && !bezel_custom_available()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.3f, 1));
+        ImGui::TextWrapped("No bezel.png / bezel.jpg found, showing the pattern. Put one in:");
+        ImGui::PopStyleColor();
+        ImGui::TextWrapped("%s", app_data_dir());
+        if (ImGui::Button("Open data folder")) {
+            char url[1100];
+            snprintf(url, sizeof url, "file://%s", app_data_dir());
+            SDL_OpenURL(url);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reload")) bezel_reload_custom();
+    }
     ImGui::Checkbox("Remove sprite flicker", &ui_config.no_flicker);
     help_marker("The NES can only show 8 sprites per line, so games flicker when more are on screen. "
                 "This draws all of them. Gameplay is unaffected.");

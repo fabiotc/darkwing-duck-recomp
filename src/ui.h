@@ -19,6 +19,7 @@ typedef struct {
     bool frame_interp;    /* show generated in-between frames (2x frame rate) */
     bool no_flicker;      /* draw more than 8 sprites per line */
     int state_slot;       /* 1..UI_STATE_SLOTS */
+    int bezel;            /* BEZEL_* (artwork around the picture) */
 } ui_settings;
 
 #define UI_STATE_SLOTS 4

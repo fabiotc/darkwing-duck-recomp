@@ -84,7 +84,8 @@ target_link_libraries(game_recomp PUBLIC nesrt)
 # Window functions are huge single functions; -O1 keeps compile times sane.
 target_compile_options(game_recomp PRIVATE -O1 -Wno-unused-label)
 
-add_executable(darkwing-duck src/main.c src/rom_select.c src/ui.cpp)
+add_executable(darkwing-duck src/main.c src/bezel.c src/rom_select.c src/ui.cpp)
+target_include_directories(darkwing-duck PRIVATE third_party)
 target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt imgui SDL3::SDL3)
 
 # ---- Packaging ----------------------------------------------------------------

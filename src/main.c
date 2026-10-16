@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "nesrt/recomp.h"
+#include "bezel.h"
 #include "rom_select.h"
 #include "ui.h"
 
@@ -290,8 +291,7 @@ static void present(void) {
     float scale = SDL_min((float)w / NES_WIDTH, (float)h / NES_HEIGHT);
     if (ui_config.integer_scale && scale >= 1.0f) scale = SDL_floorf(scale);
     SDL_FRect dst = {(w - NES_WIDTH * scale) / 2, (h - NES_HEIGHT * scale) / 2, NES_WIDTH * scale, NES_HEIGHT * scale};
-    SDL_SetRenderDrawColor(G.renderer, 0, 0, 0, 255);
-    SDL_RenderClear(G.renderer);
+    bezel_draw(G.renderer, ui_config.bezel, &dst, w, h);
     SDL_RenderTexture(G.renderer, G.texture, NULL, &dst);
     ui_draw();
     SDL_RenderPresent(G.renderer);
