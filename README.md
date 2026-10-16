@@ -8,6 +8,31 @@ runtime that provides the NES hardware (PPU, APU, MMC1 mapper, controllers) thro
 > **No game data is included.** You must supply your own legally obtained dump of
 > the cartridge. The build checks its hash.
 
+> **This project is a "RE"comp. It is NOT a "DE"comp.**
+
+## Recomp vs. decomp
+
+Both turn an old game into something that runs natively on a modern computer, but
+they get there in very different ways.
+
+| | **Recompilation** (this project) | **Decompilation** |
+|---|---|---|
+| How | A tool **automatically translates** the game's machine code into C, instruction by instruction | People **rewrite the game by hand** as readable C that compiles back to the exact original binary |
+| Resulting code | Correct but unreadable: `L_C123: c->a = RAM[0x30]; ...` | Human-friendly: `void player_jump(Player *p) { ... }` |
+| Names & meaning | None: functions and variables are just addresses | Every function, variable and data structure is understood and named |
+| Assets (graphics, music, levels) | Stay inside the ROM, which is read at runtime | Usually extracted into editable files (PNG, maps, music) |
+| Effort | Days to weeks, mostly tooling | Months to years, usually a whole community |
+| Modding | Hard: you patch at the machine-code level | Easy: change the C or the asset files and rebuild |
+| Examples | N64Recomp (Zelda64Recomp), XenonRecomp (Unleashed Recompiled), SymphonyRecomp | Super Mario 64 (`sm64`), Ocarina of Time (`oot`), Pokémon Red (`pokered`) |
+
+Recompilation is the fast route to a native, playable port. A decompilation, when
+one exists, can complement it: recomp projects such as SymphonyRecomp use the
+community decomp as a reference to name functions and write patches. Darkwing Duck
+has no decompilation, so the generated code here only knows addresses.
+
+In both approaches, the repository holds tools and code, never the game's data. Each
+player supplies their own copy, and the build produces the game locally from it.
+
 ## Status
 
 First playable version: the game boots, the intro, title, map and stages run
