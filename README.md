@@ -63,7 +63,49 @@ Expected ROM: `Darkwing Duck (Europe)`, NES 2.0 header, SHA-1
 | Start | Enter | Start |
 | Select | Right Shift / Backspace | Back |
 
-F11 toggles fullscreen, F12 saves a screenshot, Esc quits.
+**Esc** or **F1** (or the gamepad's Guide button) opens the options menu, which pauses the game.
+F11 toggles fullscreen, F12 saves a screenshot.
+
+## Options menu & cheats
+
+The menu has cheats, fullscreen, integer scaling, window size and volume. Your choices
+are saved and restored on the next launch.
+
+| Cheat | What it does |
+|---|---|
+| Invincible | Enemies and projectiles can't hurt Darkwing (pits still do) |
+| Infinite lives | Dying doesn't decrease the lives counter |
+
+Cheats are **code patches**, not memory pokes. They're declared in
+`config/darkwing_duck.toml` and compiled into the game as runtime switches:
+
+```toml
+[[cheats]]
+id = "invincible"
+name = "Invincible"
+return = ["07:F9C2"]   # the damage routine returns immediately when enabled
+```
+
+* `return = ["BANK:ADDR"]` makes the instruction at that address act as `RTS`.
+* `skip = ["BANK:ADDR"]` skips that instruction.
+
+New cheats show up in the menu automatically after a rebuild. They can also be enabled
+from the command line with `--cheat invincible`.
+
+### Finding addresses for new cheats
+
+Two debug options help locate game variables and the code that changes them:
+
+* `--ram-log FILE` dumps the 2 KiB of RAM every frame, so you can compare memory
+  before and after an event, like getting hit.
+* `--watch ADDR` (with `--interpret`) prints every instruction that changes a RAM byte:
+  ```
+  watch $05B4: 80 -> 82 by 07:F9F3 (frame 4474)
+  ```
+
+Things found so far: health is stored in the HUD heart tiles (`$05B2`–`$05B8`, one
+per quarter heart), the damage routine is at `$F9C2`, and lives are two digit tiles
+at `$05E4`/`$05E6` (`$70` = "0").
 
 ## How it works
 
@@ -121,6 +163,7 @@ cmp a.bmp b.bmp
 | `tools/nesrecomp/` | the recompiler (opcode table, semantics, analysis, codegen) |
 | `runtime/` | `nesrt`: CPU glue/dispatcher, PPU, APU, cartridge + mappers |
 | `src/main.c` | SDL3 frontend |
+| `src/ui.cpp` | options menu (Dear ImGui) |
 | `config/` | per-game config and recorded entry points |
 
 ## Legal

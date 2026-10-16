@@ -9,6 +9,7 @@
 nes_cpu nes_cpu_state;
 nes_stats nes_stats_state;
 uint8_t nes_pad[2];
+uint8_t nes_cheats[64];
 
 static nes_options opts;
 static uint8_t pad_shift[2];
@@ -179,6 +180,50 @@ void nes_power_on(const nes_options *opt) {
     if (opts.trace_path) trace_set = calloc(TRACE_SIZE, sizeof(uint32_t));
 }
 
+/* Apply an enabled cheat patch at c->pc, mirroring what the recompiled code
+ * does. Returns -1 if none applies, else what nes_interp_step would return. */
+static int interp_patch(nes_cpu *c) {
+    for (int i = 0; i < nes_patch_count; i++) {
+        const nes_patch_def *p = &nes_patch_defs[i];
+        if (p->addr != c->pc || !nes_cheats[p->cheat] ||
+            p->bank != nes_bus_state.prg_bank16[(c->pc >> 14) & 1])
+            continue;
+        if (p->kind == NES_PATCH_SKIP) {
+            CYC(p->cycles);
+            c->pc = (uint16_t)(c->pc + p->size);
+            return 0;
+        }
+        CYC(6); /* behave like RTS */
+        c->pc = (uint16_t)(POP16() + 1);
+        POLL();
+        return 1;
+    }
+    return -1;
+}
+
+static int interp_step(nes_cpu *c) {
+    if (nes_patch_count) {
+        int r = interp_patch(c);
+        if (r >= 0) return r;
+    }
+    return nes_interp_step(c);
+}
+
+/* Interpret one block, reporting every instruction that changes the watched byte. */
+static void watch_block(nes_cpu *c) {
+    int done;
+    do {
+        uint16_t pc = c->pc;
+        int bank = nes_bus_state.prg_bank16[(pc >> 14) & 1];
+        uint8_t before = RAM[opts.watch_addr & 0x7FF];
+        done = interp_step(c);
+        uint8_t after = RAM[opts.watch_addr & 0x7FF];
+        if (before != after)
+            fprintf(stderr, "watch $%04X: %02X -> %02X by %02X:%04X (frame %llu)\n", opts.watch_addr, before,
+                    after, bank, pc, (unsigned long long)nes_ppu_frame_count());
+    } while (!done && !c->quit);
+}
+
 void nes_run(void) {
     nes_cpu *c = &nes_cpu_state;
     while (!c->quit) {
@@ -194,8 +239,12 @@ void nes_run(void) {
         if (trace_set && c->pc >= 0x8000)
             trace_add((uint32_t)nes_bus_state.prg_bank16[(c->pc >> 14) & 1] << 16 | c->pc);
         nes_stats_state.interp_blocks++;
+        if (opts.watch_addr >= 0) {
+            watch_block(c);
+            continue;
+        }
         do nes_stats_state.interp_insns++;
-        while (!nes_interp_step(c) && !c->quit);
+        while (!interp_step(c) && !c->quit);
     }
 }
 

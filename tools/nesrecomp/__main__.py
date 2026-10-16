@@ -10,7 +10,7 @@ import os
 import sys
 import tomllib
 
-from .recompiler import Recompiler, Window, Insn, disasm, gen_interpreter
+from .recompiler import Cheat, Recompiler, Window, disasm, gen_interpreter
 from .rom import Rom
 
 
@@ -57,8 +57,14 @@ def cmd_recompile(args) -> int:
             return 1
 
     rc = cfg.get("recomp", {})
-    rec = Recompiler(rom, {int(a, 16) for a in rc.get("noreturn", [])})
+    cheats = [Cheat(c["id"], c["name"], c.get("description", ""),
+                    [parse_entry(e) for e in c.get("return", [])],
+                    [parse_entry(e) for e in c.get("skip", [])])
+              for c in cfg.get("cheats", [])]
+    rec = Recompiler(rom, {int(a, 16) for a in rc.get("noreturn", [])}, cheats)
     seeds = rec.default_seeds()
+    for key, addrs in rec.patch_seeds().items():
+        seeds.setdefault(key, set()).update(addrs)
     entries = [parse_entry(e) for e in rc.get("entries", [])]
     for name in rc.get("entries_files", []):
         p = os.path.join(cfg_dir, name)

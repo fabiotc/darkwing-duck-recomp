@@ -1,0 +1,155 @@
+#include "ui.h"
+
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlrenderer3.h"
+
+extern "C" {
+#include "nesrt/recomp.h"
+}
+
+ui_settings ui_config = {80, false};
+
+static SDL_Window *g_window;
+static SDL_Renderer *g_renderer;
+static bool g_open;
+static std::string g_settings_path;
+
+/* ---- Settings file: simple "key=value" lines in the user's pref dir --- */
+
+static void load_settings() {
+    FILE *f = fopen(g_settings_path.c_str(), "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        char key[128];
+        int value;
+        if (sscanf(line, "%127[^=]=%d", key, &value) != 2) continue;
+        if (!strcmp(key, "volume")) ui_config.volume = value < 0 ? 0 : value > 100 ? 100 : value;
+        else if (!strcmp(key, "integer_scale")) ui_config.integer_scale = value != 0;
+        else if (!strncmp(key, "cheat.", 6))
+            for (int i = 0; i < nes_cheat_count; i++)
+                if (!strcmp(key + 6, nes_cheat_defs[i].id)) nes_cheats[i] = value != 0;
+    }
+    fclose(f);
+}
+
+static void save_settings() {
+    FILE *f = fopen(g_settings_path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "volume=%d\ninteger_scale=%d\n", ui_config.volume, ui_config.integer_scale);
+    for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i] ? 1 : 0);
+    fclose(f);
+}
+
+/* ---- Public API -------------------------------------------------------- */
+
+bool ui_init(SDL_Window *window, SDL_Renderer *renderer) {
+    g_window = window;
+    g_renderer = renderer;
+    if (char *pref = SDL_GetPrefPath("darkwing-duck-recomp", "darkwing-duck")) {
+        g_settings_path = std::string(pref) + "settings.ini";
+        SDL_free(pref);
+        load_settings();
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    ImGui::StyleColorsDark();
+    ImGuiStyle &style = ImGui::GetStyle();
+    style.WindowRounding = 6.0f;
+    style.FrameRounding = 4.0f;
+    style.WindowPadding = ImVec2(14, 12);
+    style.ItemSpacing = ImVec2(8, 8);
+    float dpi = SDL_GetWindowDisplayScale(window);
+    if (dpi > 0) {
+        style.ScaleAllSizes(dpi);
+        io.FontGlobalScale = dpi;
+    }
+    return ImGui_ImplSDL3_InitForSDLRenderer(window, renderer) && ImGui_ImplSDLRenderer3_Init(renderer);
+}
+
+void ui_shutdown(void) {
+    save_settings();
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+}
+
+void ui_process_event(const SDL_Event *e) { ImGui_ImplSDL3_ProcessEvent(e); }
+bool ui_is_open(void) { return g_open; }
+
+void ui_toggle(void) {
+    g_open = !g_open;
+    if (!g_open) save_settings();
+}
+
+static void help_marker(const char *text) {
+    if (!text || !*text) return;
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::BeginItemTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+void ui_draw(void) {
+    if (!g_open) return;
+    ImGui_ImplSDLRenderer3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    /* Dim the paused game behind the menu. */
+    ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, IM_COL32(0, 0, 0, 150));
+
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::Begin("Darkwing Duck - Options", nullptr,
+                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+
+    ImGui::SeparatorText("Cheats");
+    if (nes_cheat_count == 0) ImGui::TextDisabled("No cheats defined in the game config.");
+    for (int i = 0; i < nes_cheat_count; i++) {
+        bool on = nes_cheats[i] != 0;
+        if (ImGui::Checkbox(nes_cheat_defs[i].name, &on)) nes_cheats[i] = on;
+        help_marker(nes_cheat_defs[i].description);
+    }
+
+    ImGui::SeparatorText("Video");
+    bool fullscreen = SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN;
+    if (ImGui::Checkbox("Fullscreen", &fullscreen)) SDL_SetWindowFullscreen(g_window, fullscreen);
+    ImGui::Checkbox("Integer scaling", &ui_config.integer_scale);
+    help_marker("Only scale the picture by whole numbers, so every NES pixel is the same size.");
+    if (!fullscreen) {
+        ImGui::TextUnformatted("Window size:");
+        for (int s = 1; s <= 5; s++) {
+            ImGui::SameLine();
+            char label[8];
+            snprintf(label, sizeof label, "%dx", s);
+            if (ImGui::Button(label)) SDL_SetWindowSize(g_window, NES_WIDTH * s, NES_HEIGHT * s);
+        }
+    }
+
+    ImGui::SeparatorText("Audio");
+    ImGui::SliderInt("Volume", &ui_config.volume, 0, 100, "%d%%");
+
+    ImGui::Separator();
+    if (ImGui::Button("Resume")) ui_toggle();
+    ImGui::SameLine();
+    if (ImGui::Button("Quit game")) nes_cpu_state.quit = true;
+    ImGui::SameLine();
+    ImGui::TextDisabled("Esc / F1 toggles this menu");
+
+    ImGui::End();
+    ImGui::Render();
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), g_renderer);
+}

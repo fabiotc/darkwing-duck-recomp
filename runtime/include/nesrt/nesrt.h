@@ -110,6 +110,7 @@ extern uint8_t nes_pad[2];
 typedef struct nes_options {
     bool interpret_only;   /* ignore recompiled code (reference mode) */
     const char *trace_path; /* record block starts the interpreter executes */
+    int watch_addr;         /* debug: log instructions that change this RAM byte (-1 = off) */
     nes_region region;
 } nes_options;
 

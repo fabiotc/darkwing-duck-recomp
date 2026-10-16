@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "nesrt/recomp.h"
+#include "ui.h"
 
 static const uint32_t PALETTE[64] = {
     0x626262, 0x001FB2, 0x2404C8, 0x5200B2, 0x730076, 0x800024, 0x730B00, 0x522800,
@@ -23,6 +24,7 @@ static struct {
     long max_frames;
     const char *screenshot;
     const char *input_script;
+    FILE *ram_log;
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *texture;
@@ -83,6 +85,52 @@ static uint8_t read_keyboard(void) {
     return b;
 }
 
+static void handle_events(long frame) {
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        ui_process_event(&e);
+        if (e.type == SDL_EVENT_QUIT) {
+            nes_cpu_state.quit = true;
+        } else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+            switch (e.key.scancode) {
+            case SDL_SCANCODE_ESCAPE:
+            case SDL_SCANCODE_F1: ui_toggle(); break;
+            case SDL_SCANCODE_F11:
+                SDL_SetWindowFullscreen(G.window, !(SDL_GetWindowFlags(G.window) & SDL_WINDOW_FULLSCREEN));
+                break;
+            case SDL_SCANCODE_F12: {
+                char name[64];
+                snprintf(name, sizeof name, "screenshot-%ld.bmp", frame);
+                save_screenshot(name);
+                break;
+            }
+            default: break;
+            }
+        } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
+            ui_toggle();
+        } else if (e.type == SDL_EVENT_GAMEPAD_ADDED && !G.gamepad) {
+            G.gamepad = SDL_OpenGamepad(e.gdevice.which);
+        } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED && G.gamepad && SDL_GetGamepadID(G.gamepad) == e.gdevice.which) {
+            SDL_CloseGamepad(G.gamepad);
+            G.gamepad = NULL;
+        }
+    }
+}
+
+/* Draw the last game frame letterboxed in the window, plus the menu. */
+static void present(void) {
+    int w, h;
+    SDL_GetCurrentRenderOutputSize(G.renderer, &w, &h);
+    float scale = SDL_min((float)w / NES_WIDTH, (float)h / NES_HEIGHT);
+    if (ui_config.integer_scale && scale >= 1.0f) scale = SDL_floorf(scale);
+    SDL_FRect dst = {(w - NES_WIDTH * scale) / 2, (h - NES_HEIGHT * scale) / 2, NES_WIDTH * scale, NES_HEIGHT * scale};
+    SDL_SetRenderDrawColor(G.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(G.renderer);
+    SDL_RenderTexture(G.renderer, G.texture, NULL, &dst);
+    ui_draw();
+    SDL_RenderPresent(G.renderer);
+}
+
 void nes_frame_callback(void) {
     long frame = (long)nes_ppu_frame_count();
 
@@ -91,29 +139,14 @@ void nes_frame_callback(void) {
             nes_pad[0] = G.script_buttons[G.script_pos++];
     }
 
+    if (G.ram_log) fwrite(nes_bus_state.ram, 1, sizeof nes_bus_state.ram, G.ram_log);
+
     if (G.headless) {
         int16_t sink[4096];
         while (nes_apu_take_samples(sink, 4096)) {}
     } else {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_EVENT_QUIT) nes_cpu_state.quit = true;
-            else if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_ESCAPE) nes_cpu_state.quit = true;
-            else if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F11)
-                SDL_SetWindowFullscreen(G.window, !(SDL_GetWindowFlags(G.window) & SDL_WINDOW_FULLSCREEN));
-            else if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F12 && !e.key.repeat) {
-                char name[64];
-                snprintf(name, sizeof name, "screenshot-%ld.bmp", frame);
-                save_screenshot(name);
-            } else if (e.type == SDL_EVENT_GAMEPAD_ADDED && !G.gamepad)
-                G.gamepad = SDL_OpenGamepad(e.gdevice.which);
-            else if (e.type == SDL_EVENT_GAMEPAD_REMOVED && G.gamepad &&
-                     SDL_GetGamepadID(G.gamepad) == e.gdevice.which) {
-                SDL_CloseGamepad(G.gamepad);
-                G.gamepad = NULL;
-            }
-        }
-        if (!G.script_len) nes_pad[0] = read_keyboard();
+        handle_events(frame);
+        if (!G.script_len) nes_pad[0] = ui_is_open() ? 0 : read_keyboard();
 
         void *pixels;
         int pitch;
@@ -121,14 +154,23 @@ void nes_frame_callback(void) {
             to_rgb(pixels); /* texture pitch == 256*4 */
             SDL_UnlockTexture(G.texture);
         }
-        SDL_RenderClear(G.renderer);
-        SDL_RenderTexture(G.renderer, G.texture, NULL, NULL);
-        SDL_RenderPresent(G.renderer);
+        present();
+
+        /* The menu pauses the game: keep drawing it until it is closed. */
+        while (ui_is_open() && !nes_cpu_state.quit) {
+            SDL_Delay(16);
+            handle_events(frame);
+            present();
+        }
+        if (G.next_frame_ns < SDL_GetTicksNS()) G.next_frame_ns = SDL_GetTicksNS();
 
         int16_t buf[4096];
         size_t n;
-        while ((n = nes_apu_take_samples(buf, 4096)) > 0)
-            if (G.audio) SDL_PutAudioStreamData(G.audio, buf, (int)(n * sizeof(int16_t)));
+        while ((n = nes_apu_take_samples(buf, 4096)) > 0) {
+            if (!G.audio) continue;
+            for (size_t i = 0; i < n; i++) buf[i] = (int16_t)(buf[i] * ui_config.volume / 100);
+            SDL_PutAudioStreamData(G.audio, buf, (int)(n * sizeof(int16_t)));
+        }
         /* Keep audio latency bounded if we ever fall behind. */
         if (G.audio && SDL_GetAudioStreamQueued(G.audio) > 48000 / 4 * 2) SDL_ClearAudioStream(G.audio);
 
@@ -187,7 +229,10 @@ static void usage(void) {
             "  --headless          no window/audio, run as fast as possible\n"
             "  --frames N          quit after N frames\n"
             "  --input FILE        scripted input: lines of '<frame> <buttons>' (ABsSUDLR)\n"
-            "  --screenshot FILE   save a BMP of the last frame on exit\n");
+            "  --screenshot FILE   save a BMP of the last frame on exit\n"
+            "  --cheat ID          enable a cheat (invincible, infinite_lives)\n"
+            "  --watch ADDR        with --interpret: log instructions that change RAM byte ADDR (hex)\n"
+            "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
 }
 
 static const char *find_rom(void) {
@@ -203,7 +248,7 @@ static const char *find_rom(void) {
 }
 
 int main(int argc, char **argv) {
-    nes_options opt = {0};
+    nes_options opt = {.watch_addr = -1};
     const char *rom = NULL, *region = NULL;
     int scale = 3;
     for (int i = 1; i < argc; i++) {
@@ -218,6 +263,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--frames") && more) G.max_frames = atol(argv[++i]);
         else if (!strcmp(a, "--input") && more) G.input_script = argv[++i];
         else if (!strcmp(a, "--screenshot") && more) G.screenshot = argv[++i];
+        else if (!strcmp(a, "--cheat") && more) {
+            const char *id = argv[++i];
+            int k = 0;
+            while (k < nes_cheat_count && strcmp(nes_cheat_defs[k].id, id)) k++;
+            if (k == nes_cheat_count) { fprintf(stderr, "unknown cheat '%s'\n", id); return 2; }
+            nes_cheats[k] = 1;
+        }
+        else if (!strcmp(a, "--watch") && more) opt.watch_addr = (int)strtol(argv[++i], NULL, 16);
+        else if (!strcmp(a, "--ram-log") && more) G.ram_log = fopen(argv[++i], "wb");
         else if (a[0] == '-') { usage(); return 2; }
         else rom = a;
     }
@@ -257,10 +311,10 @@ int main(int argc, char **argv) {
             return 1;
         }
         SDL_SetRenderVSync(G.renderer, 0);
-        SDL_SetRenderLogicalPresentation(G.renderer, NES_WIDTH, NES_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         G.texture = SDL_CreateTexture(G.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
                                       NES_WIDTH, NES_HEIGHT);
         SDL_SetTextureScaleMode(G.texture, SDL_SCALEMODE_NEAREST);
+        if (!ui_init(G.window, G.renderer)) fprintf(stderr, "warning: menu unavailable\n");
         if (!G.no_audio) {
             SDL_AudioSpec spec = {SDL_AUDIO_S16, 1, 48000};
             G.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
@@ -281,6 +335,9 @@ int main(int argc, char **argv) {
             (unsigned long long)nes_ppu_frame_count(), (unsigned long long)s->recomp_entries,
             (unsigned long long)s->interp_blocks, (unsigned long long)s->interp_insns,
             (unsigned long long)s->unique_misses);
-    if (!G.headless) SDL_Quit();
+    if (!G.headless) {
+        ui_shutdown();
+        SDL_Quit();
+    }
     return 0;
 }

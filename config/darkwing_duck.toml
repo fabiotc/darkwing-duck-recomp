@@ -11,3 +11,24 @@ entries_files = ["darkwing_duck.entries"]
 # Subroutines that never return to the instruction after the JSR
 # (e.g. jump-table dispatchers that pop their return address).
 noreturn = []
+
+# ---- Cheats -----------------------------------------------------------------
+# Each cheat is compiled into the game as a runtime switch and listed in the
+# in-game menu (F1).
+#   return = ["BANK:ADDR", ...]  the instruction at ADDR acts as RTS when enabled
+#   skip   = ["BANK:ADDR", ...]  the instruction at ADDR is skipped when enabled
+
+[[cheats]]
+id = "invincible"
+name = "Invincible"
+description = "Enemies and projectiles can't hurt Darkwing. Falling into a pit still costs a life."
+# $F9C2 is the player-damage routine: it starts the hurt animation and empties
+# a quarter of the HUD heart (health lives in the heart tiles at $05B2-$05B8).
+return = ["07:F9C2"]
+
+[[cheats]]
+id = "infinite_lives"
+name = "Infinite lives"
+description = "Losing a life doesn't decrease the lives counter."
+# Lives are two digit tiles: $05E4 (tens) and $05E6 (ones, $70 = '0').
+skip = ["07:CB15"]  # DEC $05E6

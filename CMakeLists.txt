@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(darkwing_duck_recomp C)
+project(darkwing_duck_recomp C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -18,6 +19,20 @@ if(NOT SDL3_FOUND)
   set(SDL_SHARED OFF CACHE BOOL "" FORCE)
   FetchContent_MakeAvailable(SDL3)
 endif()
+
+# Dear ImGui for the in-game menu.
+include(FetchContent)
+FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.8)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui STATIC
+  ${imgui_SOURCE_DIR}/imgui.cpp
+  ${imgui_SOURCE_DIR}/imgui_draw.cpp
+  ${imgui_SOURCE_DIR}/imgui_tables.cpp
+  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(imgui PUBLIC SDL3::SDL3)
 
 set(ROM_PATH "${CMAKE_SOURCE_DIR}/rom/darkwing-duck.nes" CACHE FILEPATH "Your Darkwing Duck ROM")
 set(GAME_CONFIG "${CMAKE_SOURCE_DIR}/config/darkwing_duck.toml")
@@ -61,5 +76,5 @@ target_link_libraries(game_recomp PUBLIC nesrt)
 # Window functions are huge single functions; -O1 keeps compile times sane.
 target_compile_options(game_recomp PRIVATE -O1 -Wno-unused-label)
 
-add_executable(darkwing-duck src/main.c)
-target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt SDL3::SDL3)
+add_executable(darkwing-duck src/main.c src/ui.cpp)
+target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt imgui SDL3::SDL3)
