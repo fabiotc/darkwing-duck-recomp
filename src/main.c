@@ -301,7 +301,11 @@ static void handle_events(long frame) {
     while (SDL_PollEvent(&e)) {
         ui_process_event(&e);
         if (e.type == SDL_EVENT_QUIT) {
+            /* Window closed, Alt+F4, or a termination signal (SIGTERM/SIGINT). */
+            fprintf(stderr, "quit requested by the system (SDL_EVENT_QUIT) at frame %ld\n", frame);
             nes_cpu_state.quit = true;
+        } else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            fprintf(stderr, "window close requested at frame %ld\n", frame);
         } else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
             switch (e.key.scancode) {
             case SDL_SCANCODE_ESCAPE:
@@ -518,15 +522,24 @@ static void open_log_file(void) {
     if (!dir) return;
     char path[1200];
     snprintf(path, sizeof path, "%sdarkwing-duck.log", dir);
-    if (freopen(path, "w", stderr)) setvbuf(stderr, NULL, _IONBF, 0);
+    SDL_PathInfo info;
+    bool big = SDL_GetPathInfo(path, &info) && info.size > 256 * 1024;
+    if (!freopen(path, big ? "w" : "a", stderr)) return;
+    setvbuf(stderr, NULL, _IONBF, 0);
+    SDL_Time now;
+    SDL_DateTime dt;
+    if (SDL_GetCurrentTime(&now) && SDL_TimeToDateTime(now, &dt, true))
+        fprintf(stderr, "\n==== %04d-%02d-%02d %02d:%02d:%02d ====\n", dt.year, dt.month, dt.day, dt.hour,
+                dt.minute, dt.second);
 }
 
 static void log_environment(void) {
     int v = SDL_GetVersion();
     fprintf(stderr, "Darkwing Duck Recomp %s on %s, SDL %d.%d.%d\n", DWD_VERSION, SDL_GetPlatform(),
             SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v));
+    fprintf(stderr, "  started by Steam: %s\n", getenv("SteamGameId") || getenv("SteamAppId") ? "yes" : "no");
     const char *vars[] = {"XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "SteamDeck", "SteamGameId",
-                          "GAMESCOPE_WAYLAND_DISPLAY", "APPIMAGE"};
+                          "SteamAppId", "GAMESCOPE_WAYLAND_DISPLAY", "SDL_VIDEO_DRIVER", "APPIMAGE", "PWD"};
     for (size_t i = 0; i < sizeof vars / sizeof *vars; i++) {
         const char *val = getenv(vars[i]);
         if (val) fprintf(stderr, "  %s=%s\n", vars[i], val);
@@ -686,6 +699,7 @@ int main(int argc, char **argv) {
     G.next_frame_ns = SDL_GetTicksNS() + G.frame_ns;
     nes_run();
 
+    fprintf(stderr, "exiting normally\n");
     if (G.screenshot) save_screenshot(G.screenshot);
     nes_shutdown();
     nes_stats *s = &nes_stats_state;

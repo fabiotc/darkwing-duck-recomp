@@ -378,7 +378,10 @@ void ui_draw(void) {
     help_marker("Turns all cheats and enhancements off, except the background and slowdown removal.");
     if (ImGui::Button("Resume")) ui_toggle();
     ImGui::SameLine();
-    if (ImGui::Button("Quit game")) nes_cpu_state.quit = true;
+    if (ImGui::Button("Quit game")) {
+        fprintf(stderr, "quit from the menu\n");
+        nes_cpu_state.quit = true;
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("Esc / F1 / Select+Start");
 
