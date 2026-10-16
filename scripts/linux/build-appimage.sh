@@ -37,7 +37,10 @@ chmod +x /tmp/appimagetool
 printf '\0\0\0' | dd of=/tmp/appimagetool bs=1 seek=8 count=3 conv=notrunc 2>/dev/null
 (cd /tmp && ./appimagetool --appimage-extract >/dev/null)
 mkdir -p /src/dist
-ARCH=x86_64 /tmp/squashfs-root/AppRun --no-appstream "$APPDIR" "/src/dist/$NAME-linux-x86_64.AppImage"
+# Use our patched runtime (falls back to extract-and-run without FUSE).
+RUNTIME=$(ls /src/build-release/runtime/runtime-x86_64-*-patched | head -1)
+ARCH=x86_64 /tmp/squashfs-root/AppRun --no-appstream --runtime-file "$RUNTIME" "$APPDIR" \
+  "/src/dist/$NAME-linux-x86_64.AppImage"
 
 # Plain archive too: the bare executable needs no FUSE/AppImage mounting,
 # which can fail when Steam launches games in a restricted environment.

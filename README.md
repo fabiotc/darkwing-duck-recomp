@@ -54,13 +54,16 @@ Download the package for your system from the
 |---|---|
 | Windows 10/11 (64-bit) | `DarkwingDuckRecomp-*-windows-x64.zip` |
 | macOS 11+ (Apple Silicon & Intel) | `DarkwingDuckRecomp-*-macos-universal.zip` |
-| Linux, Steam Deck, SteamOS | `DarkwingDuckRecomp-*-linux-x86_64.tar.gz` (best for Steam / Game Mode) or `…-linux-x86_64.AppImage` |
+| Linux, Steam Deck, SteamOS | `DarkwingDuckRecomp-*-linux-x86_64.AppImage` or `…-linux-x86_64.tar.gz` (both work in Steam Game Mode) |
 
 On first launch the game asks for your ROM (file dialog or drag and drop). It checks
 the ROM and keeps a copy in its data folder, so you only choose it once. A ROM named
 `darkwing-duck.nes` placed next to the app or AppImage is also picked up automatically,
 which is the easiest route on a Steam Deck. On Steam Deck / SteamOS, make sure no Proton
-compatibility tool is forced for the AppImage (game Properties → Compatibility). When
+compatibility tool is forced for the AppImage (game Properties → Compatibility). Steam
+can launch games where AppImages can't mount themselves (no usable FUSE). Our AppImage
+uses a patched runtime that detects this and runs in extract-and-run mode, so no launch
+options are needed. When
 launched without a terminal, the game writes `darkwing-duck.log` to its data folder for
 troubleshooting. Each package includes a `README.txt` with
 per-platform tips, such as adding the AppImage to Steam and the macOS "unidentified
@@ -226,7 +229,7 @@ two of them pointed at exactly the instructions found above.
 |---|---|
 | macOS universal `.app` | Xcode command line tools (ad-hoc signed) |
 | Windows x64 `.exe` | mingw-w64 cross-compiler (`brew install mingw-w64`) |
-| Linux x86_64 AppImage | Docker, inside an Ubuntu 22.04 container (glibc 2.35+, including SteamOS) |
+| Linux x86_64 AppImage + tar.gz | Docker, inside an Ubuntu 22.04 container (glibc 2.35+, including SteamOS). The AppImage runtime is [type2-runtime](https://github.com/AppImage/type2-runtime) with `packaging/linux/runtime-fuse-fallback.patch`, built and cached by `scripts/linux/build-runtime.sh` |
 
 SDL3 is built from source and linked statically (`-DDWD_BUNDLED_SDL=ON`), so the packages
 have no dependencies. Output goes to `dist/`, together with `SHA256SUMS.txt`. The ROM is
@@ -270,6 +273,8 @@ cmp a.bmp b.bmp
 
 * [Dear ImGui](https://github.com/ocornut/imgui) (MIT) for the menu
 * [SDL3](https://libsdl.org) (zlib) for video, audio and input
+* [AppImage type2-runtime](https://github.com/AppImage/type2-runtime) (MIT), with a small patch
+  for automatic extract-and-run when FUSE is unavailable
 * [stb_image](https://github.com/nothings/stb) (MIT / public domain), vendored in `third_party/`, for loading bezel images
 * "[Pixel night city](https://opengameart.org/content/pixel-night-city)" by **fridaruiz** (CC0), the default
   background. See `assets/bezels/LICENSE.md`

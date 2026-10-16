@@ -1,0 +1,24 @@
+diff --git a/src/runtime/runtime.c b/src/runtime/runtime.c
+index a073f60..2598598 100644
+--- a/src/runtime/runtime.c
++++ b/src/runtime/runtime.c
+@@ -1577,6 +1577,19 @@ int main(int argc, char* argv[]) {
+         free(abspath);
+     }
+ 
++    /* Patch (darkwing-duck-recomp): if FUSE can't be used (no setuid fusermount
++     * on $PATH, or no /dev/fuse), e.g. when Steam starts the game in Game Mode,
++     * fall back to extract-and-run instead of failing. Plain launches only. */
++    if (getenv("APPIMAGE_EXTRACT_AND_RUN") == NULL && getenv("FUSERMOUNT_PROG") == NULL &&
++        !(arg && strncmp(arg, "appimage-", 9) == 0)) {
++        char* fm = find_fusermount(false);
++        if (fm == NULL || access("/dev/fuse", R_OK | W_OK) != 0) {
++            fprintf(stderr, "AppImage: FUSE is unavailable, running in extract-and-run mode\n");
++            setenv("APPIMAGE_EXTRACT_AND_RUN", "1", 1);
++        }
++        free(fm);
++    }
++
+     if (getenv("APPIMAGE_EXTRACT_AND_RUN") != NULL || (arg && strcmp(arg, "appimage-extract-and-run") == 0)) {
+         char* hexlified_digest = NULL;
+ 
