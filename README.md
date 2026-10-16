@@ -102,7 +102,7 @@ speed unchanged) start enabled. *Reset to defaults* in the menu restores this.
 |---|---|
 | Filter: Scale2x / Scale3x | Redraws pixel-art edges at 2x/3x resolution so diagonals look smooth |
 | Filter: CRT scanlines | Imitates the scanlines of the TVs the art was designed for |
-| Background (bezel) | Fills the space beside the picture (e.g. fullscreen on a 16:9/16:10 screen) with an original built-in pattern (default), your own image (`bezel.png` / `bezel.jpg` in the data folder), or classic black bars |
+| Background (bezel) | Fills the space beside the picture (e.g. fullscreen on a 16:9/16:10 screen) with an original built-in pattern (default), your own image (`bezel.png` / `bezel.jpg` in the data folder; *Image fit*: Fill for artwork, Repeat for patterns, Auto picks by shape), or classic black bars |
 | Remove sprite flicker | Lifts the NES limit of 8 sprites per scanline, so busy scenes stop flickering. Game logic still sees the hardware's overflow flag, so gameplay is identical |
 | Remove slowdown | Doubles the CPU time per frame (extra idle vblank scanlines) so busy scenes don't lag. Game speed and music stay the same because the APU is paused during the extra lines. Command line: `--overclock` |
 | Frame interpolation (experimental) | Shows a generated frame between each pair of real ones (50 to 100 fps). It's rendered at 2x resolution so objects moving 1 px per frame can be drawn half a pixel along. Sprites are matched between frames by tile, and each scanline's scroll is interpolated. Adds half a frame of latency, and animation changes can't be interpolated. Needs a display of at least 100 Hz |

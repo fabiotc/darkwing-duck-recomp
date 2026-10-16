@@ -20,6 +20,7 @@ typedef struct {
     bool no_flicker;      /* draw more than 8 sprites per line */
     int state_slot;       /* 1..UI_STATE_SLOTS */
     int bezel;            /* BEZEL_* (artwork around the picture) */
+    int bezel_fit;        /* BEZEL_FIT_* for custom images */
 } ui_settings;
 
 #define UI_STATE_SLOTS 4

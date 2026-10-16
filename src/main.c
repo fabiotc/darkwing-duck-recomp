@@ -291,7 +291,7 @@ static void present(void) {
     float scale = SDL_min((float)w / NES_WIDTH, (float)h / NES_HEIGHT);
     if (ui_config.integer_scale && scale >= 1.0f) scale = SDL_floorf(scale);
     SDL_FRect dst = {(w - NES_WIDTH * scale) / 2, (h - NES_HEIGHT * scale) / 2, NES_WIDTH * scale, NES_HEIGHT * scale};
-    bezel_draw(G.renderer, ui_config.bezel, &dst, w, h);
+    bezel_draw(G.renderer, ui_config.bezel, ui_config.bezel_fit, &dst, w, h);
     SDL_RenderTexture(G.renderer, G.texture, NULL, &dst);
     ui_draw();
     SDL_RenderPresent(G.renderer);

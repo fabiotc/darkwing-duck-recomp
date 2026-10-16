@@ -25,6 +25,7 @@ static const ui_settings UI_DEFAULTS = {
     false,         /* no_flicker */
     1,             /* state_slot */
     BEZEL_PATTERN, /* bezel */
+    BEZEL_FIT_AUTO, /* bezel_fit */
 };
 ui_settings ui_config = UI_DEFAULTS;
 bool ui_cheats_available = true;
@@ -70,6 +71,7 @@ static void load_settings() {
         else if (!strcmp(key, "frame_interp")) ui_config.frame_interp = value != 0;
         else if (!strcmp(key, "no_flicker")) ui_config.no_flicker = value != 0;
         else if (!strcmp(key, "bezel")) ui_config.bezel = value >= 0 && value < BEZEL_COUNT ? value : BEZEL_PATTERN;
+        else if (!strcmp(key, "bezel_fit")) ui_config.bezel_fit = value >= 0 && value < BEZEL_FIT_COUNT ? value : 0;
         else if (!strcmp(key, "state_slot")) ui_config.state_slot = value >= 1 && value <= UI_STATE_SLOTS ? value : 1;
         else if (!strncmp(key, "cheat.", 6))
             for (int i = 0; i < nes_cheat_count; i++)
@@ -85,9 +87,9 @@ static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\nno_flicker=%d\n"
-               "state_slot=%d\nbezel=%d\n",
+               "state_slot=%d\nbezel=%d\nbezel_fit=%d\n",
             ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
-            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel);
+            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel, ui_config.bezel_fit);
     for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i]);
     fclose(f);
 }
@@ -300,6 +302,13 @@ void ui_draw(void) {
     if (ui_config.bezel == BEZEL_CUSTOM && prev_bezel != BEZEL_CUSTOM) bezel_reload_custom();
     help_marker("What fills the space around the picture. For a custom image, put bezel.png or "
                 "bezel.jpg in the game's data folder.");
+    if (ui_config.bezel == BEZEL_CUSTOM && bezel_custom_available()) {
+        static const char *fits[BEZEL_FIT_COUNT] = {"Auto", "Fill (artwork)", "Repeat (patterns)"};
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 15);
+        ImGui::Combo("Image fit", &ui_config.bezel_fit, fits, BEZEL_FIT_COUNT);
+        help_marker("Fill scales the image to cover the window (best for posters and artwork). "
+                    "Repeat fits its height and tiles it sideways (best for patterns).");
+    }
     if (ui_config.bezel == BEZEL_CUSTOM && !bezel_custom_available()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.3f, 1));
         ImGui::TextWrapped("No bezel.png / bezel.jpg found, showing the pattern. Put one in:");

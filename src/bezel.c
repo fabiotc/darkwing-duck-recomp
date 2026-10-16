@@ -138,7 +138,7 @@ static SDL_Texture *load_custom(SDL_Renderer *renderer) {
 
 /* ---- Drawing ------------------------------------------------------------ */
 
-void bezel_draw(SDL_Renderer *renderer, int mode, const SDL_FRect *game, int w, int h) {
+void bezel_draw(SDL_Renderer *renderer, int mode, int fit, const SDL_FRect *game, int w, int h) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     if (mode == BEZEL_BLACK) return;
@@ -154,9 +154,9 @@ void bezel_draw(SDL_Renderer *renderer, int mode, const SDL_FRect *game, int w, 
     if (tex) {
         float tw, th;
         SDL_GetTextureSize(tex, &tw, &th);
-        if (tw / th < (float)w / h) {
-            /* Narrower than the window (e.g. a phone wallpaper): fit the height
-             * and repeat it sideways, centred. */
+        bool repeat = fit == BEZEL_FIT_REPEAT || (fit == BEZEL_FIT_AUTO && tw / th < (float)w / h);
+        if (repeat) {
+            /* Fit the height and repeat sideways, centred (good for patterns). */
             float s = h / th, step = tw * s;
             float x0 = fmodf((w - step) / 2, step);
             if (x0 > 0) x0 -= step;
@@ -165,7 +165,7 @@ void bezel_draw(SDL_Renderer *renderer, int mode, const SDL_FRect *game, int w, 
                 SDL_RenderTexture(renderer, tex, NULL, &dst);
             }
         } else {
-            /* Wider: cover the whole window, cropping the sides. */
+            /* Cover the whole window, cropping what doesn't fit (good for artwork). */
             float s = SDL_max(w / tw, h / th);
             SDL_FRect dst = {(w - tw * s) / 2, (h - th * s) / 2, tw * s, th * s};
             SDL_RenderTexture(renderer, tex, NULL, &dst);
