@@ -10,6 +10,13 @@ runtime that provides the NES hardware (PPU, APU, MMC1 mapper, controllers) thro
 
 > **This project is a "RE"comp. It is NOT a "DE"comp.**
 
+> **A self-study project, built with AI.** This project exists for self-study: to
+> learn how static recompilation of retro games works. Its development was done
+> entirely with AI assistance: the recompiler, runtime, frontend, tooling and
+> documentation were written by an AI coding assistant under my direction. Using AI
+> this way is itself part of the study: exploring how far AI-assisted development can
+> take a project like this.
+
 ## Recomp vs. decomp
 
 Both turn an old game into something that runs natively on a modern computer, but
