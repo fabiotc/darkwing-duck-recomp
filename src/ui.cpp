@@ -14,7 +14,19 @@ extern "C" {
 #include "nesrt/recomp.h"
 }
 
-ui_settings ui_config = {80, false, FILTER_NONE, false, false, false, 1, BEZEL_PATTERN};
+/* Defaults for a new player: everything that changes the game is off; only
+ * the bezel and the performance-safe slowdown removal are on. */
+static const ui_settings UI_DEFAULTS = {
+    80,            /* volume */
+    false,         /* integer_scale */
+    FILTER_NONE,   /* filter */
+    true,          /* remove_slowdown: game and music speed are unchanged */
+    false,         /* frame_interp (experimental) */
+    false,         /* no_flicker */
+    1,             /* state_slot */
+    BEZEL_PATTERN, /* bezel */
+};
+ui_settings ui_config = UI_DEFAULTS;
 bool ui_cheats_available = true;
 
 static SDL_Window *g_window;
@@ -327,6 +339,15 @@ void ui_draw(void) {
     ImGui::SliderInt("Volume", &ui_config.volume, 0, 100, "%d%%");
 
     ImGui::Separator();
+    if (ImGui::Button("Reset to defaults")) {
+        int slot = ui_config.state_slot;
+        ui_config = UI_DEFAULTS;
+        ui_config.state_slot = slot;
+        memset(nes_cheats, 0, (size_t)nes_cheat_count);
+        ui_toast("Settings reset to defaults (all cheats off)");
+    }
+    ImGui::SameLine();
+    help_marker("Turns all cheats and enhancements off, except the background pattern and slowdown removal.");
     if (ImGui::Button("Resume")) ui_toggle();
     ImGui::SameLine();
     if (ImGui::Button("Quit game")) nes_cpu_state.quit = true;

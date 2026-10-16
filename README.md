@@ -92,6 +92,10 @@ On a gamepad, **Select + Start** opens it too. F11 toggles fullscreen, F12 saves
 The menu has cheats, video and performance options, and volume. Your choices are saved
 and restored on the next launch.
 
+**Defaults:** all cheats and gameplay-changing mods are **off**. Only the background
+pattern (bezel) and *Remove slowdown* (a performance option that keeps game and music
+speed unchanged) start enabled. *Reset to defaults* in the menu restores this.
+
 ### Video and performance enhancements
 
 | Option | What it does |
