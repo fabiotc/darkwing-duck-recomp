@@ -22,6 +22,7 @@ typedef struct {
     int bezel;            /* BEZEL_* (artwork around the picture) */
     int bezel_fit;        /* BEZEL_FIT_* for custom images */
     bool quick_skip;      /* Tab / R1 fast-forwards through cutscenes and dialogue */
+    bool fullscreen;      /* start in fullscreen (Steam Game Mode is always fullscreen) */
 } ui_settings;
 
 #define UI_STATE_SLOTS 4

@@ -105,7 +105,8 @@ On a gamepad, **Select + Start** opens it too. F11 toggles fullscreen, F12 saves
 The menu has cheats, video and performance options, and volume. Your choices are saved
 and restored on the next launch.
 
-**Defaults:** all cheats, Quick skip and gameplay-changing mods are **off**. Only the background
+**Defaults:** the game starts in **fullscreen** (Steam Game Mode is always fullscreen
+anyway). All cheats, Quick skip and gameplay-changing mods are **off**. Only the background
 (bezel) and *Remove slowdown* (a performance option that keeps game and music
 speed unchanged) start enabled. *Reset to defaults* in the menu restores this.
 

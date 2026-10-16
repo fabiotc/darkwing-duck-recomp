@@ -27,6 +27,7 @@ static const ui_settings UI_DEFAULTS = {
     BEZEL_NIGHT_CITY, /* bezel */
     BEZEL_FIT_AUTO, /* bezel_fit */
     false,          /* quick_skip */
+    true,           /* fullscreen */
 };
 ui_settings ui_config = UI_DEFAULTS;
 bool ui_cheats_available = true;
@@ -73,6 +74,7 @@ static void load_settings() {
         else if (!strcmp(key, "no_flicker")) ui_config.no_flicker = value != 0;
         else if (!strcmp(key, "bezel")) ui_config.bezel = value >= 0 && value < BEZEL_COUNT ? value : BEZEL_PATTERN;
         else if (!strcmp(key, "quick_skip")) ui_config.quick_skip = value != 0;
+        else if (!strcmp(key, "fullscreen")) ui_config.fullscreen = value != 0;
         else if (!strcmp(key, "bezel_fit")) ui_config.bezel_fit = value >= 0 && value < BEZEL_FIT_COUNT ? value : 0;
         else if (!strcmp(key, "state_slot")) ui_config.state_slot = value >= 1 && value <= UI_STATE_SLOTS ? value : 1;
         else if (!strncmp(key, "cheat.", 6))
@@ -89,9 +91,9 @@ static void save_settings() {
     FILE *f = fopen(g_settings_path.c_str(), "w");
     if (!f) return;
     fprintf(f, "volume=%d\ninteger_scale=%d\nfilter=%d\nremove_slowdown=%d\nframe_interp=%d\nno_flicker=%d\n"
-               "state_slot=%d\nbezel=%d\nbezel_fit=%d\nquick_skip=%d\n",
+               "state_slot=%d\nbezel=%d\nbezel_fit=%d\nquick_skip=%d\nfullscreen=%d\n",
             ui_config.volume, ui_config.integer_scale, ui_config.filter, ui_config.remove_slowdown,
-            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel, ui_config.bezel_fit, ui_config.quick_skip);
+            ui_config.frame_interp, ui_config.no_flicker, ui_config.state_slot, ui_config.bezel, ui_config.bezel_fit, ui_config.quick_skip, ui_config.fullscreen);
     for (int i = 0; i < nes_cheat_count; i++) fprintf(f, "cheat.%s=%d\n", nes_cheat_defs[i].id, nes_cheats[i]);
     fclose(f);
 }
@@ -282,8 +284,8 @@ void ui_draw(void) {
                 "game button stops it.");
 
     ImGui::SeparatorText("Video");
-    bool fullscreen = SDL_GetWindowFlags(g_window) & SDL_WINDOW_FULLSCREEN;
-    if (ImGui::Checkbox("Fullscreen", &fullscreen)) SDL_SetWindowFullscreen(g_window, fullscreen);
+    if (ImGui::Checkbox("Fullscreen", &ui_config.fullscreen)) SDL_SetWindowFullscreen(g_window, ui_config.fullscreen);
+    bool fullscreen = ui_config.fullscreen;
     ImGui::Checkbox("Integer scaling", &ui_config.integer_scale);
     help_marker("Only scale the picture by whole numbers, so every NES pixel is the same size.");
     if (!fullscreen) {
@@ -372,6 +374,7 @@ void ui_draw(void) {
         ui_config = UI_DEFAULTS;
         ui_config.state_slot = slot;
         memset(nes_cheats, 0, (size_t)nes_cheat_count);
+        SDL_SetWindowFullscreen(g_window, ui_config.fullscreen);
         ui_toast("Settings reset to defaults (all cheats off)");
     }
     ImGui::SameLine();

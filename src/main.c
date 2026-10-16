@@ -304,6 +304,9 @@ static void handle_events(long frame) {
             /* Window closed, Alt+F4, or a termination signal (SIGTERM/SIGINT). */
             fprintf(stderr, "quit requested by the system (SDL_EVENT_QUIT) at frame %ld\n", frame);
             nes_cpu_state.quit = true;
+        } else if (e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) {
+            /* Keep the setting in sync when the system changes it (e.g. macOS green button). */
+            ui_config.fullscreen = e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN;
         } else if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             fprintf(stderr, "window close requested at frame %ld\n", frame);
         } else if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
@@ -311,7 +314,8 @@ static void handle_events(long frame) {
             case SDL_SCANCODE_ESCAPE:
             case SDL_SCANCODE_F1: ui_toggle(); break;
             case SDL_SCANCODE_F11:
-                SDL_SetWindowFullscreen(G.window, !(SDL_GetWindowFlags(G.window) & SDL_WINDOW_FULLSCREEN));
+                ui_config.fullscreen = !ui_config.fullscreen;
+                SDL_SetWindowFullscreen(G.window, ui_config.fullscreen);
                 break;
             case SDL_SCANCODE_TAB:
                 if (ui_config.quick_skip && !ui_is_open()) G.skip_requested = true;
@@ -651,6 +655,7 @@ int main(int argc, char **argv) {
         }
         SDL_SetRenderVSync(G.renderer, 0);
         if (!ui_init(G.window, G.renderer)) fprintf(stderr, "warning: menu unavailable\n");
+        if (ui_config.fullscreen) SDL_SetWindowFullscreen(G.window, true); /* after settings load */
     }
 
     /* Command line, then the remembered copy / nearby files, then ask. */
