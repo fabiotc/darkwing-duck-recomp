@@ -59,7 +59,10 @@ Download the package for your system from the
 On first launch the game asks for your ROM (file dialog or drag and drop). It checks
 the ROM and keeps a copy in its data folder, so you only choose it once. A ROM named
 `darkwing-duck.nes` placed next to the app or AppImage is also picked up automatically,
-which is the easiest route on a Steam Deck. Each package includes a `README.txt` with
+which is the easiest route on a Steam Deck. On Steam Deck / SteamOS, make sure no Proton
+compatibility tool is forced for the AppImage (game Properties → Compatibility). When
+launched without a terminal, the game writes `darkwing-duck.log` to its data folder for
+troubleshooting. Each package includes a `README.txt` with
 per-platform tips, such as adding the AppImage to Steam and the macOS "unidentified
 developer" prompt.
 

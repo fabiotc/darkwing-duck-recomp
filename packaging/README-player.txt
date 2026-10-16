@@ -56,6 +56,14 @@ LINUX / STEAM DECK / STEAMOS
   3. Steam > Add a Game > Add a Non-Steam Game > select the AppImage.
      It then appears in Game Mode with full controller support.
   Open the menu with Select + Start (Steam reserves the Steam button).
+  If it closes right away in Game Mode: in Steam, open the game's
+  Properties > Compatibility and make sure "Force the use of a specific
+  Steam Play compatibility tool" is OFF (Proton is for Windows games).
+
+TROUBLESHOOTING
+  When started without a terminal, the game writes darkwing-duck.log to
+  its data folder (see below). It says which video system was used and
+  any errors.
 
 Data folder (ROM copy and settings):
   Windows: %APPDATA%\darkwing-duck-recomp\darkwing-duck\

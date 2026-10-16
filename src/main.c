@@ -4,6 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#define isatty _isatty
+#define fileno _fileno
+#else
+#include <unistd.h>
+#endif
 
 #include "nesrt/recomp.h"
 #include "bezel.h"
@@ -503,6 +510,65 @@ static void usage(void) {
             "  --ram-log FILE      append the 2 KiB of RAM every frame (for finding cheats)\n");
 }
 
+/* GUI launches (double-click, Steam Game Mode, Windows) have nowhere to show
+ * stderr, so send it to darkwing-duck.log in the data folder. */
+static void open_log_file(void) {
+    if (isatty(fileno(stderr))) return;
+    const char *dir = app_data_dir();
+    if (!dir) return;
+    char path[1200];
+    snprintf(path, sizeof path, "%sdarkwing-duck.log", dir);
+    if (freopen(path, "w", stderr)) setvbuf(stderr, NULL, _IONBF, 0);
+}
+
+static void log_environment(void) {
+    int v = SDL_GetVersion();
+    fprintf(stderr, "Darkwing Duck Recomp %s on %s, SDL %d.%d.%d\n", DWD_VERSION, SDL_GetPlatform(),
+            SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v));
+    const char *vars[] = {"XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "SteamDeck", "SteamGameId",
+                          "GAMESCOPE_WAYLAND_DISPLAY", "APPIMAGE"};
+    for (size_t i = 0; i < sizeof vars / sizeof *vars; i++) {
+        const char *val = getenv(vars[i]);
+        if (val) fprintf(stderr, "  %s=%s\n", vars[i], val);
+    }
+}
+
+/* Try the default video driver, then X11 and Wayland explicitly (Steam's
+ * gamescope offers both), and a software renderer as a last resort. */
+static bool create_window(int scale) {
+    const char *drivers[] = {NULL, "x11", "wayland"};
+    for (size_t i = 0; i < sizeof drivers / sizeof *drivers; i++) {
+        if (i > 0) {
+            SDL_QuitSubSystem(SDL_INIT_VIDEO);
+            SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, drivers[i], SDL_HINT_OVERRIDE);
+        }
+        if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+            fprintf(stderr, "video driver %s: %s\n", drivers[i] ? drivers[i] : "(default)", SDL_GetError());
+            continue;
+        }
+        const char *name = SDL_GetCurrentVideoDriver();
+        G.window = SDL_CreateWindow("Darkwing Duck", NES_WIDTH * scale, NES_HEIGHT * scale, SDL_WINDOW_RESIZABLE);
+        if (!G.window) {
+            fprintf(stderr, "video driver %s: window: %s\n", name, SDL_GetError());
+            continue;
+        }
+        G.renderer = SDL_CreateRenderer(G.window, NULL);
+        if (!G.renderer) {
+            fprintf(stderr, "video driver %s: renderer: %s; trying software\n", name, SDL_GetError());
+            G.renderer = SDL_CreateRenderer(G.window, "software");
+        }
+        if (!G.renderer) {
+            fprintf(stderr, "video driver %s: software renderer: %s\n", name, SDL_GetError());
+            SDL_DestroyWindow(G.window);
+            G.window = NULL;
+            continue;
+        }
+        fprintf(stderr, "video: %s, renderer: %s\n", name, SDL_GetRendererName(G.renderer));
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char **argv) {
     nes_options opt = {.watch_addr = -1};
     const char *rom = NULL, *region = NULL, *load_state = NULL;
@@ -552,13 +618,17 @@ int main(int argc, char **argv) {
     }
 
     if (!G.headless) {
-        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | (G.no_audio ? 0 : SDL_INIT_AUDIO))) {
-            fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
-            return 1;
+        open_log_file();
+        log_environment();
+        if (!SDL_Init(SDL_INIT_GAMEPAD)) fprintf(stderr, "warning: no gamepad support: %s\n", SDL_GetError());
+        if (!G.no_audio && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+            fprintf(stderr, "warning: no audio: %s\n", SDL_GetError());
+            G.no_audio = true;
         }
-        if (!SDL_CreateWindowAndRenderer("Darkwing Duck", NES_WIDTH * scale, NES_HEIGHT * scale,
-                                         SDL_WINDOW_RESIZABLE, &G.window, &G.renderer)) {
-            fprintf(stderr, "SDL window: %s\n", SDL_GetError());
+        if (!create_window(scale)) {
+            fprintf(stderr, "error: could not open a window with any video driver\n");
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Darkwing Duck",
+                                     "Could not open a window. See darkwing-duck.log in the game's data folder.", NULL);
             return 1;
         }
         SDL_SetRenderVSync(G.renderer, 0);
@@ -573,9 +643,12 @@ int main(int argc, char **argv) {
         if (G.headless) {
             fprintf(stderr, "error: ROM not found. Pass the path to your Darkwing Duck dump.\n");
             usage();
+        } else {
+            fprintf(stderr, "no ROM chosen, exiting\n");
         }
         return 1;
     }
+    fprintf(stderr, "ROM: %s\n", rom);
 
     char err[256];
     if (!nes_cart_load(rom, err, sizeof err) || !nes_mapper_init(err, sizeof err)) {

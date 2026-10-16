@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(darkwing_duck_recomp VERSION 0.2.0 LANGUAGES C CXX)
+project(darkwing_duck_recomp VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -94,6 +94,7 @@ add_custom_command(
 
 add_executable(darkwing-duck src/main.c src/bezel.c src/rom_select.c src/ui.cpp "${GEN_DIR}/bezel_night_city.c")
 target_include_directories(darkwing-duck PRIVATE third_party)
+target_compile_definitions(darkwing-duck PRIVATE DWD_VERSION="${PROJECT_VERSION}")
 target_link_libraries(darkwing-duck PRIVATE game_recomp nesrt imgui SDL3::SDL3)
 
 # ---- Packaging ----------------------------------------------------------------
